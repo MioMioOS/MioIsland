@@ -145,7 +145,7 @@ struct AgentSettingsTab: View {
         .appendingPathComponent(".mio/agent.log").path
     private let mioDir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".mio")
-    private let healthURL = URL(string: "http://127.0.0.1:7878")!
+    private let healthURL = URL(string: "http://127.0.0.1:7878/health")!
     private let launchLabel = "io.miomioos.mio-agent"
 
     var body: some View {
@@ -587,7 +587,8 @@ struct AgentSettingsTab: View {
         let procRunning = await shellCheck("/usr/bin/pgrep", args: ["-x", "mio-agent"])
 
         // Health endpoint (only meaningful when process is running)
-        let healthy = procRunning ? await pingHealth() : false
+        let healthResult = procRunning ? await pingHealth() : (reachable: false, error: nil as String?)
+        let healthy = healthResult.reachable
 
         await MainActor.run {
             snap.binaryExists = binExists
@@ -615,18 +616,30 @@ struct AgentSettingsTab: View {
                 snap.phase = .runningHealthy
             } else {
                 snap.phase = .runningUnhealthy
+                // Surface the actual probe failure so the user can see why health is red.
+                if let healthError = healthResult.error {
+                    snap.lastDiagnostic = healthError
+                }
             }
         }
     }
 
-    private func pingHealth() async -> Bool {
+    /// Probe the daemon health endpoint. Returns reachable=true on HTTP 200.
+    /// On any failure (non-200 or network error) returns reachable=false with a human-readable
+    /// error string so the UI can surface the real reason instead of a generic "unhealthy" label.
+    private func pingHealth() async -> (reachable: Bool, error: String?) {
         do {
             var req = URLRequest(url: healthURL)
-            req.timeoutInterval = 0.5
+            req.timeoutInterval = 2.0
             let (_, resp) = try await URLSession.shared.data(for: req)
-            return (resp as? HTTPURLResponse)?.statusCode == 200
+            let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            if status == 200 {
+                return (true, nil)
+            } else {
+                return (false, "Health probe HTTP \(status) — expected 200")
+            }
         } catch {
-            return false
+            return (false, "Health probe: \(error.localizedDescription)")
         }
     }
 
