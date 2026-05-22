@@ -165,6 +165,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case behavior
     case plugins
     case codelight       // Pair iPhone + Launch Presets merged
+    case agent           // Mio Agent daemon management
     case cmuxConnection  // diagnostics for phone→terminal relay
     case logs            // live DebugLogger tail
     case advanced
@@ -180,6 +181,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .behavior:       return "slider.horizontal.3"
         case .plugins:        return "puzzlepiece.extension.fill"
         case .codelight:      return "iphone.radiowaves.left.and.right"
+        case .agent:          return "cpu"
         case .cmuxConnection: return "terminal.fill"
         case .logs:           return "doc.text.magnifyingglass"
         case .advanced:       return "wrench.and.screwdriver.fill"
@@ -195,6 +197,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .behavior:       return L10n.tabBehavior
         case .plugins:        return "Plugins"
         case .codelight:      return L10n.tabCodeLight
+        case .agent:          return "Mio Agent"
         case .cmuxConnection: return L10n.tabCmuxConnection
         case .logs:           return L10n.tabLogs
         case .advanced:       return L10n.tabAdvanced
@@ -214,6 +217,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .behavior:       return "Behavior"
         case .plugins:        return "Plugins & Extensions"
         case .codelight:      return "CodeLight"
+        case .agent:          return "Mio Agent"
         case .cmuxConnection: return "cmux Connection"
         case .logs:           return "Logs"
         case .advanced:       return "Advanced"
@@ -458,6 +462,7 @@ private struct SystemSettingsContentView: View {
                 case .behavior:       BehaviorTab()
                 case .plugins:        NativePluginStoreView()
                 case .codelight:      CodeLightTab()
+                case .agent:          AgentSettingsTab()
                 case .cmuxConnection: CmuxConnectionTab()
                 case .logs:           LogsTab()
                 case .advanced:       AdvancedTab()
@@ -634,7 +639,7 @@ private struct TabToggle: View {
 
 /// Section label above a card: uppercase, tracked, muted.
 /// Usage: `SectionLabel(L10n.someSection)` then `SettingsListCard { ... }`.
-private struct SectionLabel: View {
+struct SectionLabel: View {
     let text: String
     init(_ text: String) { self.text = text }
 
@@ -652,7 +657,7 @@ private struct SectionLabel: View {
 /// Card sized for a vertical list of SettingRow. Uses tight vertical padding
 /// so rows' own 12pt vertical padding drives the row height — matches the
 /// reference mock's `padding: '4px 16px'` row card.
-private struct SettingsListCard<Content: View>: View {
+struct SettingsListCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -676,7 +681,7 @@ private struct SettingsListCard<Content: View>: View {
 /// A single list row: optional icon tile, label, optional sublabel, control.
 /// `isLast` suppresses the bottom divider so the final row sits flush with the
 /// card's bottom padding.
-private struct SettingRow<Control: View>: View {
+struct SettingRow<Control: View>: View {
     let icon: String?
     let label: String
     let sublabel: String?
