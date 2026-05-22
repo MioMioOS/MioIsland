@@ -10,11 +10,13 @@ import CryptoKit
 //   version, git_commit, platforms.<arch>.{file, sha256, size}, required_fixes, created_at
 //
 // Install flow (task #121):
-//   1. Fetch SHASUMS256.txt from the pinned release tag
-//   2. Download the darwin-arm64 tarball
-//   3. Verify SHA-256 against the manifest value
-//   4. Extract binary from tarball with /usr/bin/tar
-//   5. Atomically move to ~/.mio/bin/mio-agent (never overwrites on failure)
+//   1. Fetch manifest JSON; assert required_fixes ⊇ {machine-api-v1-prefix, socketio-control-path}
+//      (anti-rollback gate from task #118/#120 — rejects stale releases even if SHA matches)
+//   2. Fetch SHASUMS256.txt from the pinned release tag
+//   3. Download the darwin-arm64 tarball
+//   4. Verify SHA-256 against SHASUMS256.txt value
+//   5. Extract binary from tarball with /usr/bin/tar
+//   6. Copy to dest.staging, then FileManager.replaceItemAt (atomic; old binary survives failure)
 //
 // Update procedure when cutting a new release:
 //   - Run `npm run build:release` in mio-agent (scripts/build-release.mjs)
@@ -48,9 +50,28 @@ enum MioAgentDistribution {
     static var shasumURL:    URL { releaseBaseURL.appendingPathComponent("SHASUMS256.txt") }
     static var tarballURL:   URL { releaseBaseURL.appendingPathComponent(tarballFilename) }
 
+    // ── Anti-rollback contract (task #118/#120) ───────────────────────────────
+
+    /// Fixes that MUST be present in a release's manifest before we allow installation.
+    /// A release that pre-dates these fixes is rejected even if its SHA-256 matches.
+    static let requiredFixes: Set<String> = [
+        "machine-api-v1-prefix",
+        "socketio-control-path",
+    ]
+
+    // ── Manifest type ─────────────────────────────────────────────────────────
+
+    /// Subset of the release manifest we care about for install-time validation.
+    private struct Manifest: Decodable {
+        let version: String
+        let required_fixes: [String]
+    }
+
     // ── Error types ───────────────────────────────────────────────────────────
 
     enum DownloadError: LocalizedError {
+        case manifestFetchFailed(statusCode: Int)
+        case requiredFixesMissing(fixes: [String])
         case shasumFetchFailed(statusCode: Int)
         case sha256NotFound(filename: String)
         case downloadFailed(statusCode: Int)
@@ -60,6 +81,11 @@ enum MioAgentDistribution {
 
         var errorDescription: String? {
             switch self {
+            case .manifestFetchFailed(let code):
+                return "Failed to fetch release manifest (HTTP \(code))"
+            case .requiredFixesMissing(let fixes):
+                return "Release is missing required fixes: \(fixes.joined(separator: ", ")). " +
+                       "This release is too old to install safely — update pinnedVersion."
             case .shasumFetchFailed(let code):
                 return "Failed to fetch release checksum file (HTTP \(code))"
             case .sha256NotFound(let filename):
@@ -97,7 +123,28 @@ enum MioAgentDistribution {
         onProgress: @escaping @Sendable (String) -> Void
     ) async throws {
 
-        // ── Step 1: Fetch SHASUMS256.txt for SHA-256 of the tarball ──
+        // ── Step 1: Fetch and validate release manifest ──
+        //
+        // The manifest carries a `required_fixes` array that lists all bug-fixes
+        // present in this release. We reject any release that is missing the
+        // mandatory fixes from task #118/#120 — even if its SHA-256 matches —
+        // to prevent a pinned-but-stale release from installing a buggy daemon.
+
+        onProgress("Verifying release manifest...")
+        let (manifestData, manifestResp) = try await URLSession.shared.data(from: manifestURL)
+        let manifestStatus = (manifestResp as? HTTPURLResponse)?.statusCode ?? 0
+        guard manifestStatus == 200 else {
+            throw DownloadError.manifestFetchFailed(statusCode: manifestStatus)
+        }
+
+        let manifest = try JSONDecoder().decode(Manifest.self, from: manifestData)
+        let presentFixes = Set(manifest.required_fixes)
+        let missingFixes = Self.requiredFixes.subtracting(presentFixes)
+        guard missingFixes.isEmpty else {
+            throw DownloadError.requiredFixesMissing(fixes: Array(missingFixes).sorted())
+        }
+
+        // ── Step 2: Fetch SHASUMS256.txt for SHA-256 of the tarball ──
 
         onProgress("Fetching release checksum...")
         let (shasumData, shasumResp) = try await URLSession.shared.data(from: shasumURL)
@@ -111,7 +158,7 @@ enum MioAgentDistribution {
             throw DownloadError.sha256NotFound(filename: tarballFilename)
         }
 
-        // ── Step 2: Download tarball to a per-install temp directory ──
+        // ── Step 3: Download tarball to a per-install temp directory ──
 
         let tempDir = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("mio-agent-install-\(UUID().uuidString)")
@@ -129,7 +176,7 @@ enum MioAgentDistribution {
         // Move URLSession's temp file into our named temp location.
         try FileManager.default.moveItem(at: downloadedURL, to: tempTarball)
 
-        // ── Step 3: Verify SHA-256 before touching the destination ──
+        // ── Step 4: Verify SHA-256 before touching the destination ──
 
         onProgress("Verifying checksum...")
         let tarballData = try Data(contentsOf: tempTarball)
@@ -140,7 +187,7 @@ enum MioAgentDistribution {
             throw DownloadError.checksumMismatch(expected: expectedSHA256, actual: actualSHA256)
         }
 
-        // ── Step 4: Extract binary from tarball ──
+        // ── Step 5: Extract binary from tarball ──
 
         onProgress("Extracting binary...")
         let extractDir = tempDir.appendingPathComponent("extract")
@@ -154,27 +201,47 @@ enum MioAgentDistribution {
             throw DownloadError.extractionFailed(reason: tarErr.isEmpty ? "tar exited \(tarExit)" : tarErr)
         }
 
-        // ── Step 5: Locate the binary inside the extracted tree ──
+        // ── Step 6: Locate the binary inside the extracted tree ──
 
         guard let extractedBinary = findFile(named: "mio-agent", in: extractDir) else {
             throw DownloadError.binaryNotFoundInTarball
         }
 
-        // ── Step 6: Atomic move to destination (no-overwrite-on-fail) ──
+        // ── Step 7: Stage-then-atomic-replace (true no-overwrite-on-fail) ──
         //
-        // We only touch destinationPath AFTER all verification passes.
-        // If we throw before this step, the old binary is preserved.
+        // We copy the verified binary to a sibling staging path first.
+        // The OLD binary at destinationPath is NEVER removed until the staging
+        // copy is complete and the atomic swap succeeds. On any failure before
+        // the swap, the old binary is intact.
+        //
+        // FileManager.replaceItemAt(_:withItemAt:) maps to renameat(2) on the
+        // same volume — atomic on HFS+/APFS. It also handles the case where
+        // the destination does not yet exist (first install).
+        //
+        // Note on codesigning: ad-hoc re-signing (--sign -) is harmless for the
+        // current ad-hoc-signed release. If the release ships with a Developer-ID
+        // signature in future, callers MUST NOT ad-hoc re-sign — doing so will
+        // strip the notarisation seal. Caller should probe the existing signature
+        // before deciding whether to sign.
 
         onProgress("Installing mio-agent...")
         let destURL = URL(fileURLWithPath: destinationPath)
+        let stagingURL = URL(fileURLWithPath: destinationPath + ".staging")
 
-        // Remove existing binary so we can move the new one in cleanly.
+        // Remove any leftover staging file from a previous failed attempt.
+        try? FileManager.default.removeItem(at: stagingURL)
+
+        // Copy verified binary into staging (old dest is untouched on failure here).
+        try FileManager.default.copyItem(at: extractedBinary, to: stagingURL)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stagingURL.path)
+
+        // Atomic swap: old binary survives until this line returns successfully.
         if FileManager.default.fileExists(atPath: destinationPath) {
-            try FileManager.default.removeItem(at: destURL)
+            _ = try FileManager.default.replaceItemAt(destURL, withItemAt: stagingURL)
+        } else {
+            // First install — no existing binary to preserve; just move staging into place.
+            try FileManager.default.moveItem(at: stagingURL, to: destURL)
         }
-        // Copy (not move) so the verified file stays in temp until FileManager confirms success.
-        try FileManager.default.copyItem(at: extractedBinary, to: destURL)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destinationPath)
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
