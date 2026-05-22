@@ -2,15 +2,15 @@
 //  AgentSettingsTab.swift
 //  ClaudeIsland
 //
-//  Mio Agent settings tab — status monitoring, install/start/stop controls,
-//  and unavailable-capability rows for features pending Phase 2 IPC.
+//  Mio Agent settings tab — Phase 2 state design implementation.
 //
-//  Phase 1 scope (task #70):
-//  - Status card: binary presence, process health, health endpoint ping
-//  - Controls card: Install / Start / Stop buttons via launchctl
-//  - Unavailable rows: Action execution, Workroom, Log streaming, SMAppService upgrade
+//  Phase 1 scope (#70/#74): Install/Start/Stop via launchctl + basic status probe.
+//  Phase 2 scope (#93, spec #90): Full AgentLifecyclePhase state model, LaunchAgent
+//    loaded detection, lifecycle detail rows, Logs card, honest Phase 1 stop copy.
 //
-//  Phase 2 (tracked separately): IPC socket, real-time status, Workroom binding.
+//  State model: docs/productization/agent-tab-phase2-state-design.md
+//
+//  Phase 2 stubs (IPC drain, real-time status, log streaming): marked TODO(Phase2).
 //
 
 import AppKit
@@ -18,246 +18,490 @@ import Foundation
 import ServiceManagement
 import SwiftUI
 
-// MARK: - Agent Status
+// MARK: - AgentLifecyclePhase
 
-private enum AgentStatus: Equatable {
-    case checking
-    case notInstalled   // ~/.mio/bin/mio-agent doesn't exist
-    case stopped        // binary present, not running
-    case running        // process alive + health endpoint reachable
-    case unhealthy      // process found but health endpoint timeout/error
+/// Full state model per #90 spec §3.
+///
+/// Distinguishes binary presence, LaunchAgent registration, process running,
+/// health endpoint availability, and transient busy states.
+enum AgentLifecyclePhase: Equatable {
+    case checking           // initial probe in progress
+    case notInstalled       // ~/.mio/bin/mio-agent missing
+    case installedUnloaded  // binary present, launchd job not loaded
+    case loadedStopped      // job loaded, process not running
+    case starting           // install/start command in progress
+    case runningHealthy     // process running + health endpoint 200
+    case runningUnhealthy   // process running, health endpoint unreachable
+    case draining           // TODO(Phase2): IPC drain in progress
+    case stopping           // bootout in progress
+    case error              // controlled diagnostic — see snap.lastDiagnostic
+    case unknown            // probe failed or data stale
+
+    // MARK: Display
 
     var dotColor: Color {
         switch self {
-        case .checking:     return Theme.neutralDot
-        case .notInstalled: return Theme.neutralDot
-        case .stopped:      return Theme.warning
-        case .running:      return Theme.success
-        case .unhealthy:    return Theme.error
+        case .checking, .unknown:                return Theme.neutralDot
+        case .notInstalled:                      return Theme.neutralDot
+        case .installedUnloaded, .loadedStopped: return Theme.warning
+        case .starting, .stopping, .draining:    return .blue
+        case .runningHealthy:                    return Theme.success
+        case .runningUnhealthy, .error:          return Theme.error
         }
     }
 
-    var label: String {
+    var showSpinner: Bool {
         switch self {
-        case .checking:     return "检测中…"
-        case .notInstalled: return "未安装"
-        case .stopped:      return "已停止"
-        case .running:      return "运行中"
-        case .unhealthy:    return "进程存在但健康检测失败"
+        case .checking, .starting, .stopping, .draining: return true
+        default: return false
         }
+    }
+
+    var primaryLabel: String {
+        switch self {
+        case .checking:          return "Checking…"
+        case .notInstalled:      return "Not installed"
+        case .installedUnloaded: return "Installed · stopped"
+        case .loadedStopped:     return "Loaded · not running"
+        case .starting:          return "Starting…"
+        case .runningHealthy:    return "Running"
+        case .runningUnhealthy:  return "Running · health check failed"
+        case .draining:          return "Stopping safely…"
+        case .stopping:          return "Stopping…"
+        case .error:             return "Action failed"
+        case .unknown:           return "Status unknown"
+        }
+    }
+
+    var descriptionText: String {
+        switch self {
+        case .checking:
+            return "Probing agent status…"
+        case .notInstalled:
+            return "Install the bundled mio-agent before starting local action execution."
+        case .installedUnloaded:
+            return "The LaunchAgent is not running. Start it to prepare local action execution."
+        case .loadedStopped:
+            return "The job is loaded but the process is not running. Start will kickstart the job."
+        case .starting:
+            return "Wait; controls are disabled while the agent starts."
+        case .runningHealthy:
+            return "mio-agent is available on this Mac."
+        case .runningUnhealthy:
+            return "The process exists, but the local health endpoint did not respond."
+        case .draining:
+            return "Waiting for in-flight actions to reach a safe stopping point."
+        case .stopping:
+            return "The agent will be unloaded from launchd. Drain-safe stop is coming in Phase 2."
+        case .error:
+            return ""   // diagnostic carried in snap.lastDiagnostic
+        case .unknown:
+            return "Could not determine agent status. Refresh to try again."
+        }
+    }
+
+    /// True while a launchctl/install command is in flight.
+    var isBusy: Bool {
+        switch self {
+        case .checking, .starting, .stopping, .draining: return true
+        default: return false
+        }
+    }
+}
+
+// MARK: - AgentLifecycleSnapshot
+
+/// Single view model passed through the UI.
+struct AgentLifecycleSnapshot {
+    var binaryExists: Bool = false
+    var launchAgentLoaded: Bool? = nil  // nil = probe not run yet
+    var processRunning: Bool = false
+    var healthReachable: Bool = false
+    var socketExists: Bool? = nil       // Phase 2: ~/.mio/agent.sock
+    var logFileExists: Bool = false
+    var phase: AgentLifecyclePhase = .checking
+    var lastCheckedAt: Date? = nil
+    var lastDiagnostic: String? = nil   // error/diagnostic copy (controlled)
+
+    var isBusy: Bool { phase.isBusy }
+
+    var lastCheckedLabel: String {
+        guard let date = lastCheckedAt else { return "" }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "HH:mm"
+        return "Last checked \(fmt.string(from: date))"
     }
 }
 
 // MARK: - AgentSettingsTab
 
 struct AgentSettingsTab: View {
-    @State private var status: AgentStatus = .checking
-    @State private var binaryExists = false
-    @State private var processRunning = false
-    @State private var healthReachable = false
-    @State private var actionInProgress = false
-    @State private var lastActionMessage: String? = nil
+    @State private var snap = AgentLifecycleSnapshot()
 
-    // Known paths — Phase 2 may make these configurable
+    // Known paths
     private let binaryPath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".mio/bin/mio-agent").path
     private let plistPath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/LaunchAgents/io.miomioos.mio-agent.plist").path
     private let socketPath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".mio/agent.sock").path
+    private let logPath = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".mio/agent.log").path
     private let healthURL = URL(string: "http://127.0.0.1:7878")!
     private let launchLabel = "io.miomioos.mio-agent"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            // Header description
-            Text(L10n.isChinese
-                 ? "Mio Agent 是在本机后台运行的守护进程，负责与 AI runtime 通信、执行 action 并上报结果。"
-                 : "Mio Agent is a background daemon that communicates with AI runtimes, fires actions, and reports results to MioServer.")
+            // Description
+            Text("Mio Agent is a background daemon that communicates with AI runtimes, fires actions, and reports results to MioServer.")
                 .font(.system(size: 11))
                 .foregroundColor(Theme.subtle)
 
-            // MARK: Status card
-            SectionLabel(L10n.isChinese ? "状态" : "Status")
-            SettingsCard {
-                statusRow(
-                    icon: "cpu",
-                    title: L10n.isChinese ? "守护进程二进制" : "Daemon binary",
-                    ok: binaryExists ? true : false,
-                    detail: binaryExists ? binaryPath : (L10n.isChinese ? "未找到 — 请先安装" : "Not found — install first")
-                )
-                statusRow(
-                    icon: "bolt.fill",
-                    title: L10n.isChinese ? "进程状态" : "Process",
-                    ok: processRunning ? true : (binaryExists ? false : nil),
-                    detail: processRunning
-                        ? (L10n.isChinese ? "运行中" : "Running")
-                        : (L10n.isChinese ? "未运行" : "Not running")
-                )
-                statusRow(
-                    icon: "heart.fill",
-                    title: L10n.isChinese ? "健康端点" : "Health endpoint",
-                    ok: healthReachable ? true : (processRunning ? false : nil),
-                    detail: healthReachable
-                        ? "127.0.0.1:7878 ✓"
-                        : (L10n.isChinese ? "不可达" : "Unreachable")
-                )
-            }
+            // MARK: Overall status card
+            overallStatusCard
 
-            // MARK: Controls card
-            SectionLabel(L10n.isChinese ? "控制" : "Controls")
-            SettingsCard {
-                HStack(spacing: 8) {
-                    // Install button — only relevant when binary is absent
-                    controlButton(
-                        label: L10n.isChinese ? "安装" : "Install",
-                        icon: "arrow.down.circle.fill",
-                        enabled: !binaryExists && !actionInProgress
-                    ) { await installAgent() }
+            // MARK: Lifecycle detail rows
+            SectionLabel("Lifecycle")
+            lifecycleDetailRows
 
-                    // Start / Stop toggle
-                    if processRunning {
-                        controlButton(
-                            label: L10n.isChinese ? "停止" : "Stop",
-                            icon: "stop.fill",
-                            enabled: binaryExists && !actionInProgress,
-                            destructive: true
-                        ) { await stopAgent() }
-                    } else {
-                        controlButton(
-                            label: L10n.isChinese ? "启动" : "Start",
-                            icon: "play.fill",
-                            enabled: binaryExists && !actionInProgress
-                        ) { await startAgent() }
-                    }
+            // MARK: Controls
+            SectionLabel("Controls")
+            controlsCard
 
-                    // Refresh status
-                    Button {
-                        Task { await refreshStatus() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(Theme.subtle)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(actionInProgress)
-                }
+            // MARK: Logs card
+            SectionLabel("Logs")
+            logsCard
 
-                if let msg = lastActionMessage {
-                    Text(msg)
-                        .font(.system(size: 10))
-                        .foregroundColor(Theme.subtle)
-                        .padding(.top, 2)
-                }
-            }
-
-            // MARK: Unavailable capabilities
-            SectionLabel(L10n.isChinese ? "能力（待实现）" : "Capabilities (coming soon)")
-            SettingsListCard {
-                unavailableRow(
-                    icon: "bolt.horizontal.fill",
-                    label: L10n.isChinese ? "Action 执行" : "Action execution",
-                    sublabel: L10n.isChinese
-                        ? "需要 Phase 2 IPC — runtime adapter 对接"
-                        : "Requires Phase 2 IPC — runtime adapter integration"
-                )
-                unavailableRow(
-                    icon: "rectangle.3.group.fill",
-                    label: L10n.isChinese ? "Workroom 绑定" : "Workroom binding",
-                    sublabel: L10n.isChinese
-                        ? "需要 MioServer 人工 auth cursor"
-                        : "Requires MioServer human-auth cursor"
-                )
-                unavailableRow(
-                    icon: "list.bullet.rectangle.fill",
-                    label: L10n.isChinese ? "日志 streaming" : "Log streaming",
-                    sublabel: L10n.isChinese
-                        ? "需要 IPC socket 接入"
-                        : "Requires IPC socket integration"
-                )
-                unavailableRow(
-                    icon: "arrow.up.circle.fill",
-                    label: L10n.isChinese ? "自动升级（SMAppService）" : "Auto-upgrade (SMAppService)",
-                    sublabel: L10n.isChinese
-                        ? "需要 upgrade.ts re-register 机制"
-                        : "Requires upgrade.ts re-register mechanism",
-                    isLast: true
-                )
-            }
+            // MARK: Upcoming capabilities
+            SectionLabel("Capabilities (coming soon)")
+            upcomingCapabilitiesCard
         }
         .task { await refreshStatus() }
     }
 
-    // MARK: - Status row (reuse CmuxConnectionTab pattern)
+    // MARK: - Overall status card
+
+    private var overallStatusCard: some View {
+        SettingsCard {
+            HStack(alignment: .top, spacing: 12) {
+                // Dot / spinner
+                if snap.phase.showSpinner {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .frame(width: 10, height: 10)
+                        .padding(.top, 2)
+                } else {
+                    Circle()
+                        .fill(snap.phase.dotColor)
+                        .frame(width: 10, height: 10)
+                        .padding(.top, 2)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(snap.phase.primaryLabel)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(Theme.detailText)
+
+                    let desc = snap.phase == .error
+                        ? (snap.lastDiagnostic ?? "An error occurred.")
+                        : snap.phase.descriptionText
+                    if !desc.isEmpty {
+                        Text(desc)
+                            .font(.system(size: 11))
+                            .foregroundColor(Theme.subtle)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                // Last checked + refresh
+                VStack(alignment: .trailing, spacing: 4) {
+                    if !snap.lastCheckedLabel.isEmpty {
+                        Text(snap.lastCheckedLabel)
+                            .font(.system(size: 10))
+                            .foregroundColor(Theme.subtle)
+                    }
+                    Button {
+                        Task { await refreshStatus() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 11))
+                            .foregroundColor(snap.isBusy ? Theme.subtle.opacity(0.5) : Theme.subtle)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(snap.isBusy)
+                }
+            }
+        }
+    }
+
+    // MARK: - Lifecycle detail rows
+
+    private var lifecycleDetailRows: some View {
+        SettingsListCard {
+            lifecycleRow(
+                icon: "doc.fill",
+                title: "Binary",
+                path: binaryPath,
+                state: snap.binaryExists ? ("Installed", Theme.success) : ("Missing", Theme.error)
+            )
+            Divider().opacity(0.3)
+            lifecycleRow(
+                icon: "gear",
+                title: "LaunchAgent",
+                path: launchLabel,
+                state: {
+                    switch snap.launchAgentLoaded {
+                    case .some(true):  return ("Loaded", Theme.success)
+                    case .some(false): return ("Unloaded", Theme.warning)
+                    case .none:        return ("Unknown", Theme.neutralDot)
+                    }
+                }()
+            )
+            Divider().opacity(0.3)
+            lifecycleRow(
+                icon: "bolt.fill",
+                title: "Process",
+                path: "mio-agent",
+                state: snap.processRunning
+                    ? ("Running", Theme.success)
+                    : ("Stopped", Theme.warning)
+            )
+            Divider().opacity(0.3)
+            lifecycleRow(
+                icon: "heart.fill",
+                title: "Health",
+                path: "127.0.0.1:7878",
+                state: snap.healthReachable
+                    ? ("OK", Theme.success)
+                    : (snap.processRunning ? "Failed" : "Unavailable", snap.processRunning ? Theme.error : Theme.neutralDot)
+            )
+            Divider().opacity(0.3)
+            lifecycleRow(
+                icon: "point.3.connected.trianglepath.dotted",
+                title: "Socket",
+                path: "~/.mio/agent.sock",
+                state: ("Pending Phase 2", Theme.neutralDot),
+                isLast: true
+            )
+        }
+    }
+
+    // MARK: - Controls card
+
+    private var controlsCard: some View {
+        SettingsCard {
+            // Button row — visibility driven by phase
+            HStack(spacing: 8) {
+                // Install: shown when not installed
+                if !snap.binaryExists {
+                    accentButton(
+                        label: "Install",
+                        icon: "arrow.down.circle.fill",
+                        enabled: !snap.isBusy
+                    ) { await installAgent() }
+                }
+
+                // Start: shown when installed + not running
+                if snap.binaryExists && !snap.processRunning
+                    && snap.phase != .starting && snap.phase != .stopping {
+                    accentButton(
+                        label: "Start",
+                        icon: "play.fill",
+                        enabled: !snap.isBusy
+                    ) { await startAgent() }
+                }
+
+                // Stop: shown when running or job loaded
+                if snap.processRunning || snap.launchAgentLoaded == true {
+                    if snap.phase != .starting && snap.phase != .stopping {
+                        outlineButton(
+                            label: "Stop",
+                            icon: "stop.fill",
+                            enabled: !snap.isBusy
+                        ) { await stopAgent() }
+                    }
+                }
+
+                // Refresh
+                Button {
+                    Task { await refreshStatus() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(snap.isBusy ? Theme.subtle.opacity(0.5) : Theme.subtle)
+                }
+                .buttonStyle(.plain)
+                .disabled(snap.isBusy)
+
+                Spacer()
+            }
+
+            // Last action message / diagnostic
+            if let diag = snap.lastDiagnostic {
+                Text(diag)
+                    .font(.system(size: 10))
+                    .foregroundColor(snap.phase == .error ? Theme.error : Theme.subtle)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
+            }
+        }
+    }
+
+    // MARK: - Logs card
+
+    private var logsCard: some View {
+        SettingsCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Use logs for install/start/stop diagnostics. Sensitive values are not expected here.")
+                    .font(.system(size: 10))
+                    .foregroundColor(Theme.subtle)
+
+                HStack(spacing: 8) {
+                    accentButton(label: "Open log file", icon: "doc.text", enabled: snap.binaryExists) {
+                        openLogFile()
+                    }
+                    outlineButton(label: "Copy last 100 lines", icon: "doc.on.clipboard", enabled: snap.logFileExists) {
+                        copyLastLinesOfLog(count: 100)
+                    }
+                }
+
+                if !snap.logFileExists {
+                    Text("No agent log yet. Start the agent to create ~/.mio/agent.log.")
+                        .font(.system(size: 10))
+                        .foregroundColor(Theme.subtle.opacity(0.7))
+                        .padding(.top, 2)
+                }
+            }
+        }
+    }
+
+    // MARK: - Upcoming capabilities card
+
+    private var upcomingCapabilitiesCard: some View {
+        SettingsListCard {
+            unavailableRow(
+                icon: "bolt.horizontal.fill",
+                label: "Action execution",
+                sublabel: "Requires Phase 2 IPC — runtime adapter integration"
+            )
+            unavailableRow(
+                icon: "rectangle.3.group.fill",
+                label: "Workroom binding",
+                sublabel: "Requires MioServer human-auth cursor"
+            )
+            unavailableRow(
+                icon: "list.bullet.rectangle.fill",
+                label: "Log streaming",
+                sublabel: "Requires IPC socket integration"
+            )
+            unavailableRow(
+                icon: "arrow.up.circle.fill",
+                label: "Auto-upgrade (SMAppService)",
+                sublabel: "Requires upgrade.ts re-register mechanism",
+                isLast: true
+            )
+        }
+    }
+
+    // MARK: - View helpers
 
     @ViewBuilder
-    private func statusRow(icon: String, title: String, ok: Bool?, detail: String) -> some View {
+    private func lifecycleRow(
+        icon: String,
+        title: String,
+        path: String,
+        state: (String, Color),
+        isLast: Bool = false
+    ) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 12))
+                .font(.system(size: 11))
                 .foregroundColor(Theme.subtleStrong)
-                .frame(width: 18)
+                .frame(width: 16)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(Theme.detailText.opacity(0.9))
-                Text(detail)
+                Text(path)
                     .font(.system(size: 10))
                     .foregroundColor(Theme.subtle)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+
             Spacer()
-            Circle()
-                .fill(dotColor(ok))
-                .frame(width: 8, height: 8)
-        }
-        .padding(.vertical, 4)
-    }
 
-    private func dotColor(_ ok: Bool?) -> Color {
-        switch ok {
-        case .some(true):  return Theme.success
-        case .some(false): return Theme.error
-        case .none:        return Theme.neutralDot
+            // State pill
+            Text(state.0)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(state.1)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(state.1.opacity(0.12))
+                .clipShape(Capsule())
         }
+        .padding(.vertical, 8)
     }
-
-    // MARK: - Control button
 
     @ViewBuilder
-    private func controlButton(
+    private func accentButton(
         label: String,
         icon: String,
         enabled: Bool,
-        destructive: Bool = false,
         action: @escaping () async -> Void
     ) -> some View {
         Button {
             Task { await action() }
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: icon).font(.system(size: 11))
-                Text(label).font(.system(size: 12, weight: .semibold))
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 10))
+                Text(label).font(.system(size: 11, weight: .semibold))
             }
-            .foregroundColor(destructive ? Theme.destructiveText : Theme.backgroundInk)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .foregroundColor(enabled ? Theme.backgroundInk : Theme.subtle)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(destructive ? Theme.destructiveFill : Theme.accent)
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(enabled ? Theme.accent : Theme.controlFill)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(destructive ? Theme.destructiveBorder : Color.clear, lineWidth: 0.5)
-            )
-            .opacity(enabled ? 1 : 0.4)
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
     }
 
-    // MARK: - Unavailable row
+    @ViewBuilder
+    private func outlineButton(
+        label: String,
+        icon: String,
+        enabled: Bool,
+        action: @escaping () async -> Void
+    ) -> some View {
+        Button {
+            Task { await action() }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 10))
+                Text(label).font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundColor(enabled ? Theme.detailText.opacity(0.85) : Theme.subtle)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(Theme.controlFill)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7)
+                            .strokeBorder(Theme.controlBorder, lineWidth: 0.5)
+                    )
+            )
+            .opacity(enabled ? 1 : 0.55)
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+    }
 
     @ViewBuilder
     private func unavailableRow(
@@ -267,7 +511,7 @@ struct AgentSettingsTab: View {
         isLast: Bool = false
     ) -> some View {
         SettingRow(icon: icon, label: label, sublabel: sublabel, isLast: isLast) {
-            Text(L10n.isChinese ? "即将推出" : "Soon")
+            Text("Soon")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundColor(Theme.subtle)
                 .padding(.horizontal, 8)
@@ -278,40 +522,50 @@ struct AgentSettingsTab: View {
                         .overlay(Capsule().strokeBorder(Theme.controlBorder, lineWidth: 0.5))
                 )
         }
-        // Dim unavailable rows to signal non-interactive state
         .opacity(0.55)
     }
 
     // MARK: - Status probe
 
     private func refreshStatus() async {
-        // Binary presence
-        let binExists = FileManager.default.fileExists(atPath: binaryPath)
+        await MainActor.run { snap.phase = .checking }
 
-        // Process check via pgrep
-        let running = await shellCheck("pgrep", args: ["-x", "mio-agent"])
+        // Probe all fields concurrently where safe
+        let fm = FileManager.default
+        let binExists = fm.fileExists(atPath: binaryPath)
+        let sockExists = fm.fileExists(atPath: socketPath)
+        let logExists = fm.fileExists(atPath: logPath)
 
-        // Health endpoint ping (500ms timeout)
-        let healthy: Bool
-        if running {
-            healthy = await pingHealth()
-        } else {
-            healthy = false
-        }
+        // LaunchAgent loaded: launchctl list <label> exits 0 if found in current domain.
+        // Works from GUI app context (gui/<uid> domain). Shell context returns non-zero.
+        let launchLoaded = binExists ? await shellCheck("/bin/launchctl", args: ["list", launchLabel]) : false
+
+        // Process running via pgrep
+        let procRunning = await shellCheck("/usr/bin/pgrep", args: ["-x", "mio-agent"])
+
+        // Health endpoint (only meaningful when process is running)
+        let healthy = procRunning ? await pingHealth() : false
 
         await MainActor.run {
-            binaryExists = binExists
-            processRunning = running
-            healthReachable = healthy
+            snap.binaryExists = binExists
+            snap.launchAgentLoaded = binExists ? launchLoaded : false
+            snap.processRunning = procRunning
+            snap.healthReachable = healthy
+            snap.socketExists = sockExists
+            snap.logFileExists = logExists
+            snap.lastCheckedAt = Date()
 
+            // Phase determination (order matters)
             if !binExists {
-                status = .notInstalled
-            } else if !running {
-                status = .stopped
+                snap.phase = .notInstalled
+            } else if !launchLoaded {
+                snap.phase = .installedUnloaded
+            } else if !procRunning {
+                snap.phase = .loadedStopped
             } else if healthy {
-                status = .running
+                snap.phase = .runningHealthy
             } else {
-                status = .unhealthy
+                snap.phase = .runningUnhealthy
             }
         }
     }
@@ -327,12 +581,11 @@ struct AgentSettingsTab: View {
         }
     }
 
-    /// Returns true if the shell command exits 0.
     private func shellCheck(_ cmd: String, args: [String]) async -> Bool {
         await withCheckedContinuation { continuation in
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = [cmd] + args
+            process.executableURL = URL(fileURLWithPath: cmd)
+            process.arguments = args
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
             do {
@@ -349,17 +602,14 @@ struct AgentSettingsTab: View {
 
     private func installAgent() async {
         await MainActor.run {
-            actionInProgress = true
-            lastActionMessage = L10n.isChinese ? "正在安装…" : "Installing…"
+            snap.phase = .starting
+            snap.lastDiagnostic = "Installing…"
         }
 
-        // Source: bundled binary in app Resources
         guard let srcPath = Bundle.main.path(forResource: "mio-agent", ofType: nil) else {
             await MainActor.run {
-                lastActionMessage = L10n.isChinese
-                    ? "错误：App bundle 中未找到 mio-agent 二进制"
-                    : "Error: mio-agent binary not found in app bundle"
-                actionInProgress = false
+                snap.phase = .error
+                snap.lastDiagnostic = "mio-agent was not found in the app bundle."
             }
             return
         }
@@ -368,108 +618,115 @@ struct AgentSettingsTab: View {
         let launchAgentsDir = (plistPath as NSString).deletingLastPathComponent
 
         do {
-            // Create directories
             try FileManager.default.createDirectory(atPath: mioDir, withIntermediateDirectories: true)
             try FileManager.default.createDirectory(atPath: launchAgentsDir, withIntermediateDirectories: true)
 
-            // Copy binary
             if FileManager.default.fileExists(atPath: binaryPath) {
                 try FileManager.default.removeItem(atPath: binaryPath)
             }
             try FileManager.default.copyItem(atPath: srcPath, toPath: binaryPath)
-
-            // Make executable
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binaryPath)
 
-            // Ad-hoc codesign (required for Keychain access on Apple Silicon)
+            // Ad-hoc codesign required on Apple Silicon for launchd/Keychain access
             await shellRun("/usr/bin/codesign", args: ["--sign", "-", "--force", binaryPath])
 
-            // Write LaunchAgent plist
             let plistContent = launchAgentPlist()
             try plistContent.write(toFile: plistPath, atomically: true, encoding: .utf8)
 
-            // Bootstrap with launchctl
+            // Bootstrap (register + start the job)
             let uid = "\(getuid())"
-            await shellRun("/bin/launchctl", args: ["bootstrap", "user/\(uid)", plistPath])
-
-            await MainActor.run {
-                lastActionMessage = L10n.isChinese ? "安装完成" : "Installed"
+            let bootstrapExit = await shellRun("/bin/launchctl", args: ["bootstrap", "user/\(uid)", plistPath])
+            if bootstrapExit != 0 {
+                await MainActor.run {
+                    snap.lastDiagnostic = "Could not register LaunchAgent. Check Logs for launchctl output."
+                }
+            } else {
+                await MainActor.run { snap.lastDiagnostic = nil }
             }
         } catch {
             await MainActor.run {
-                lastActionMessage = "Error: \(error.localizedDescription)"
+                snap.phase = .error
+                snap.lastDiagnostic = "Install failed: \(error.localizedDescription)"
             }
+            await refreshStatus()
+            return
         }
 
         await refreshStatus()
-        await MainActor.run { actionInProgress = false }
     }
 
     private func startAgent() async {
         await MainActor.run {
-            actionInProgress = true
-            lastActionMessage = L10n.isChinese ? "正在启动…" : "Starting…"
+            snap.phase = .starting
+            snap.lastDiagnostic = "Starting…"
         }
         let uid = "\(getuid())"
         // Bootstrap-first / kickstart-on-already-loaded pattern (idiomatic, no TOCTOU).
-        //
-        // Try `bootstrap` unconditionally:
-        //   - Not loaded → bootstrap succeeds (exit 0), job registered and started.
-        //   - Already loaded (process crashed or manually stopped) → bootstrap returns
-        //     non-zero ("service already loaded"); we fall back to `kickstart -k` which
-        //     restarts the process without re-registering the plist.
-        //
-        // This avoids a loaded-check TOCTOU race and sidesteps the `launchctl list` vs
-        // `launchctl print` exit-code ambiguity (which @运维 confirmed is unverifiable
-        // from a shell context — exit codes differ between shell and GUI app domains).
+        // - Not loaded → bootstrap succeeds (exit 0), job registered and started.
+        // - Already loaded → bootstrap returns non-zero ("service already loaded");
+        //   fall back to `kickstart -k` which restarts the process.
         let bootstrapExit = await shellRun("/bin/launchctl", args: ["bootstrap", "user/\(uid)", plistPath])
         if bootstrapExit != 0 {
-            // Job already loaded — restart the (possibly stopped/crashed) process.
-            await shellRun("/bin/launchctl", args: ["kickstart", "-k", "user/\(uid)/\(launchLabel)"])
+            let kickExit = await shellRun("/bin/launchctl", args: ["kickstart", "-k", "user/\(uid)/\(launchLabel)"])
+            if kickExit != 0 {
+                await MainActor.run {
+                    snap.phase = .error
+                    snap.lastDiagnostic = "Could not start the loaded job. Check Logs."
+                }
+                await refreshStatus()
+                return
+            }
         }
         await refreshStatus()
         await MainActor.run {
-            lastActionMessage = processRunning
-                ? (L10n.isChinese ? "已启动" : "Started")
-                : (L10n.isChinese ? "启动失败，请检查日志" : "Failed to start — check Logs tab")
-            actionInProgress = false
+            if snap.phase != .runningHealthy && snap.phase != .runningUnhealthy {
+                snap.lastDiagnostic = "Start command sent — verify status above."
+            } else {
+                snap.lastDiagnostic = nil
+            }
         }
     }
 
     private func stopAgent() async {
         await MainActor.run {
-            actionInProgress = true
-            lastActionMessage = L10n.isChinese ? "正在停止…" : "Stopping…"
+            snap.phase = .stopping
+            snap.lastDiagnostic = "Stopping…"
         }
-        // Phase 2 IPC drain hook — currently a no-op.
-        // Phase 2: replace with real IPC drain — send drain request via agent.sock,
+
+        // TODO(Phase2): Replace with real IPC drain — send drain request via agent.sock,
         // wait for irreversible in-flight actions to reach transmission_complete or
-        // needs_human before proceeding, with a hard deadline (spec: 8s / ExitTimeOut=15s).
+        // needs_human (spec: 8s deadline), then proceed with bootout.
+        // Phase 1: no IPC, proceed directly to bootout.
         await requestDrain(deadlineMs: 8_000)
 
-        // Use `bootout` to fully unload the job. `kill SIGTERM` does NOT stop a
-        // KeepAlive job — launchd immediately restarts it after the process exits.
         let uid = "\(getuid())"
-        await shellRun("/bin/launchctl", args: ["bootout", "user/\(uid)/\(launchLabel)"])
+        let bootoutExit = await shellRun("/bin/launchctl", args: ["bootout", "user/\(uid)/\(launchLabel)"])
+        if bootoutExit != 0 {
+            await MainActor.run {
+                snap.phase = .error
+                snap.lastDiagnostic = "Could not unload LaunchAgent. Refresh status or check Logs."
+            }
+            await refreshStatus()
+            return
+        }
+
         await refreshStatus()
         await MainActor.run {
-            lastActionMessage = processRunning
-                ? (L10n.isChinese ? "进程仍在运行" : "Process still running")
-                : (L10n.isChinese ? "已停止" : "Stopped")
-            actionInProgress = false
+            if snap.processRunning {
+                snap.lastDiagnostic = "Process still running after stop request."
+            } else {
+                snap.lastDiagnostic = nil
+            }
         }
     }
 
     /// IPC drain stub — no-op in Phase 1.
     ///
-    /// Phase 2 implementation: open a Unix socket connection to `socketPath` (agent.sock),
-    /// send a drain request, and await acknowledgment that no irreversible actions are in-flight,
-    /// or until `deadlineMs` elapses (whichever comes first). On deadline, proceed with bootout
-    /// anyway — the agent's ExitTimeOut=15s provides a final safety window.
+    /// Phase 2 implementation: open a Unix socket to socketPath (agent.sock),
+    /// send a drain request, await acknowledgment or deadline.
+    /// On deadline, proceed with bootout — ExitTimeOut=15s provides a final safety window.
     private func requestDrain(deadlineMs: Int) async {
-        // Phase 1: no IPC socket exists yet. Return immediately.
-        // Phase 2: replace this body with real socket drain logic.
-        _ = deadlineMs  // suppress unused-warning; parameter intentional for Phase 2 signature
+        _ = deadlineMs  // intentional Phase 2 signature
     }
 
     @discardableResult
@@ -488,6 +745,22 @@ struct AgentSettingsTab: View {
                 continuation.resume(returning: -1)
             }
         }
+    }
+
+    // MARK: - Log helpers
+
+    private func openLogFile() {
+        let logURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".mio/agent.log")
+        NSWorkspace.shared.open(logURL)
+    }
+
+    private func copyLastLinesOfLog(count: Int) {
+        guard let content = try? String(contentsOfFile: logPath, encoding: .utf8) else { return }
+        let lines = content.components(separatedBy: "\n")
+        let lastLines = Array(lines.suffix(count)).joined(separator: "\n")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(lastLines, forType: .string)
     }
 
     // MARK: - LaunchAgent plist
