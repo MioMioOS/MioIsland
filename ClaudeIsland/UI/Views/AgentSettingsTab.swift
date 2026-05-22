@@ -27,7 +27,8 @@ import SwiftUI
 enum AgentLifecyclePhase: Equatable {
     case checking           // initial probe in progress
     case notInstalled       // ~/.mio/bin/mio-agent missing
-    case installedUnloaded  // binary present, launchd job not loaded
+    case notConfigured      // binary present but ~/.mio/agent.json missing — needs `mio-agent login`
+    case installedUnloaded  // binary + config present, launchd job not loaded
     case loadedStopped      // job loaded, process not running
     case starting           // install/start command in progress
     case runningHealthy     // process running + health endpoint 200
@@ -43,6 +44,7 @@ enum AgentLifecyclePhase: Equatable {
         switch self {
         case .checking, .unknown:                return Theme.neutralDot
         case .notInstalled:                      return Theme.neutralDot
+        case .notConfigured:                     return Theme.warning
         case .installedUnloaded, .loadedStopped: return Theme.warning
         case .starting, .stopping, .draining:    return .blue
         case .runningHealthy:                    return Theme.success
@@ -61,6 +63,7 @@ enum AgentLifecyclePhase: Equatable {
         switch self {
         case .checking:          return "Checking…"
         case .notInstalled:      return "Not installed"
+        case .notConfigured:     return "Setup required"
         case .installedUnloaded: return "Installed · stopped"
         case .loadedStopped:     return "Loaded · not running"
         case .starting:          return "Starting…"
@@ -79,6 +82,8 @@ enum AgentLifecyclePhase: Equatable {
             return "Probing agent status…"
         case .notInstalled:
             return "Install the bundled mio-agent before starting local action execution."
+        case .notConfigured:
+            return "Agent is installed but not configured. Run mio-agent login in Terminal to set up before starting."
         case .installedUnloaded:
             return "The LaunchAgent is not running. Start it to prepare local action execution."
         case .loadedStopped:
@@ -114,6 +119,7 @@ enum AgentLifecyclePhase: Equatable {
 /// Single view model passed through the UI.
 struct AgentLifecycleSnapshot {
     var binaryExists: Bool = false
+    var configExists: Bool = false      // ~/.mio/agent.json — required before Start
     var launchAgentLoaded: Bool? = nil  // nil = probe not run yet
     var processRunning: Bool = false
     var healthReachable: Bool = false
@@ -141,12 +147,16 @@ struct AgentSettingsTab: View {
     // Known paths
     private let binaryPath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".mio/bin/mio-agent").path
+    private let configPath = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".mio/agent.json").path
     private let plistPath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/LaunchAgents/io.miomioos.mio-agent.plist").path
     private let socketPath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".mio/agent.sock").path
     private let logPath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".mio/agent.log").path
+    private let mioDir = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".mio")
     private let healthURL = URL(string: "http://127.0.0.1:7878")!
     private let launchLabel = "io.miomioos.mio-agent"
 
@@ -303,8 +313,8 @@ struct AgentSettingsTab: View {
                     ) { await installAgent() }
                 }
 
-                // Start: shown when installed + not running
-                if snap.binaryExists && !snap.processRunning
+                // Start: shown when installed + configured + not running
+                if snap.binaryExists && snap.configExists && !snap.processRunning
                     && snap.phase != .starting && snap.phase != .stopping {
                     accentButton(
                         label: "Start",
@@ -338,6 +348,35 @@ struct AgentSettingsTab: View {
                 Spacer()
             }
 
+            // Setup required hint: shown when agent.json is missing
+            if snap.phase == .notConfigured {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Run this command in Terminal to configure the agent:")
+                        .font(.system(size: 10))
+                        .foregroundColor(Theme.subtle)
+                    HStack(spacing: 6) {
+                        Text("mio-agent login")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Theme.detailText)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Theme.controlFill)
+                            .clipShape(RoundedRectangle(cornerRadius: 5))
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString("mio-agent login", forType: .string)
+                        } label: {
+                            Image(systemName: "doc.on.clipboard")
+                                .font(.system(size: 10))
+                                .foregroundColor(Theme.subtle)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Copy command")
+                    }
+                }
+                .padding(.top, 4)
+            }
+
             // Last action message / diagnostic
             if let diag = snap.lastDiagnostic {
                 Text(diag)
@@ -359,18 +398,19 @@ struct AgentSettingsTab: View {
                     .foregroundColor(Theme.subtle)
 
                 HStack(spacing: 8) {
-                    accentButton(label: "Open log file", icon: "doc.text", enabled: snap.logFileExists) {
+                    accentButton(label: "Open log file", icon: "doc.text", enabled: true) {
                         openLogFile()
                     }
-                    outlineButton(label: "Copy last 100 lines", icon: "doc.on.clipboard", enabled: snap.logFileExists) {
+                    outlineButton(label: "Copy last 100 lines", icon: "doc.on.clipboard", enabled: true) {
                         copyLastLinesOfLog(count: 100)
                     }
                 }
 
                 if !snap.logFileExists {
-                    Text("No agent log yet. Start the agent to create ~/.mio/agent.log.")
+                    Text("No agent log yet — ~/.mio/agent.log will be created once the agent starts successfully.")
                         .font(.system(size: 10))
                         .foregroundColor(Theme.subtle.opacity(0.7))
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 2)
                 }
             }
@@ -533,17 +573,13 @@ struct AgentSettingsTab: View {
         // Probe all fields concurrently where safe
         let fm = FileManager.default
         let binExists = fm.fileExists(atPath: binaryPath)
+        let cfgExists = fm.fileExists(atPath: configPath)
         let sockExists = fm.fileExists(atPath: socketPath)
         let logExists = fm.fileExists(atPath: logPath)
 
         // LaunchAgent loaded: `launchctl list <label>` exits 0 if the service is visible in the
-        // current launchctl session domain. Install uses `bootstrap user/$(uid)` (the user domain),
-        // not `gui/<uid>` (the GUI app domain) — these are distinct launchd domains in modern macOS.
-        // TODO(#79 smoke): verify in real MioIsland app context that this probe returns 0 for a
-        // job registered via `bootstrap user/$uid`. If it returns false-negative (job is loaded but
-        // probe returns 1), consider switching to `launchctl print user/$(uid)/<label>` to match
-        // the bootstrap domain, or checking the plist file existence as a fallback.
-        // This only affects status display (Start/Stop control flow uses bootstrap-first/kickstart).
+        // current launchctl session domain. From a GUI app process, this queries the gui/$uid domain,
+        // which is correct since we bootstrap/kickstart/bootout into gui/$uid.
         let launchLoaded = binExists ? await shellCheck("/bin/launchctl", args: ["list", launchLabel]) : false
 
         // Process running via pgrep
@@ -554,6 +590,7 @@ struct AgentSettingsTab: View {
 
         await MainActor.run {
             snap.binaryExists = binExists
+            snap.configExists = cfgExists
             snap.launchAgentLoaded = binExists ? launchLoaded : false
             snap.processRunning = procRunning
             snap.healthReachable = healthy
@@ -564,6 +601,11 @@ struct AgentSettingsTab: View {
             // Phase determination (order matters)
             if !binExists {
                 snap.phase = .notInstalled
+            } else if !cfgExists {
+                // Binary installed but agent.json missing: user must run `mio-agent login` first.
+                // Starting without config causes the agent to Fatal immediately and launchd
+                // restart-loops (KeepAlive=true) — block Start until config is present.
+                snap.phase = .notConfigured
             } else if !launchLoaded {
                 snap.phase = .installedUnloaded
             } else if !procRunning {
@@ -639,12 +681,15 @@ struct AgentSettingsTab: View {
             let plistContent = launchAgentPlist()
             try plistContent.write(toFile: plistPath, atomically: true, encoding: .utf8)
 
-            // Bootstrap (register + start the job)
+            // Bootstrap into gui/$uid — the correct launchd domain for LaunchAgents loaded
+            // from ~/Library/LaunchAgents/ in a GUI session (distinct from user/$uid).
             let uid = "\(getuid())"
-            let bootstrapExit = await shellRun("/bin/launchctl", args: ["bootstrap", "user/\(uid)", plistPath])
+            let (bootstrapExit, bootstrapErr) = await shellRun("/bin/launchctl", args: ["bootstrap", "gui/\(uid)", plistPath])
             if bootstrapExit != 0 {
                 await MainActor.run {
-                    snap.lastDiagnostic = "Could not register LaunchAgent. Check Logs for launchctl output."
+                    snap.lastDiagnostic = bootstrapErr.isEmpty
+                        ? "Could not register LaunchAgent (launchctl exit \(bootstrapExit))."
+                        : bootstrapErr
                 }
             } else {
                 await MainActor.run { snap.lastDiagnostic = nil }
@@ -667,17 +712,26 @@ struct AgentSettingsTab: View {
             snap.lastDiagnostic = "Starting…"
         }
         let uid = "\(getuid())"
-        // Bootstrap-first / kickstart-on-already-loaded pattern (idiomatic, no TOCTOU).
+        // Bootstrap-first / kickstart-on-already-loaded pattern into gui/$uid
+        // (correct domain for LaunchAgents in ~/Library/LaunchAgents/ from a GUI session).
         // - Not loaded → bootstrap succeeds (exit 0), job registered and started.
-        // - Already loaded → bootstrap returns non-zero ("service already loaded");
+        // - Already loaded → bootstrap returns non-zero ("Bootstrap failed: 5");
         //   fall back to `kickstart -k` which restarts the process.
-        let bootstrapExit = await shellRun("/bin/launchctl", args: ["bootstrap", "user/\(uid)", plistPath])
+        let (bootstrapExit, bootstrapErr) = await shellRun("/bin/launchctl", args: ["bootstrap", "gui/\(uid)", plistPath])
         if bootstrapExit != 0 {
-            let kickExit = await shellRun("/bin/launchctl", args: ["kickstart", "-k", "user/\(uid)/\(launchLabel)"])
+            let (kickExit, kickErr) = await shellRun("/bin/launchctl", args: ["kickstart", "-k", "gui/\(uid)/\(launchLabel)"])
             if kickExit != 0 {
+                let diagMsg: String
+                if !kickErr.isEmpty {
+                    diagMsg = kickErr
+                } else if !bootstrapErr.isEmpty {
+                    diagMsg = bootstrapErr
+                } else {
+                    diagMsg = "Start failed (bootstrap exit \(bootstrapExit), kickstart exit \(kickExit))."
+                }
                 await MainActor.run {
                     snap.phase = .error
-                    snap.lastDiagnostic = "Could not start the loaded job. Check Logs."
+                    snap.lastDiagnostic = diagMsg
                 }
                 await refreshStatus()
                 return
@@ -706,11 +760,13 @@ struct AgentSettingsTab: View {
         await requestDrain(deadlineMs: 8_000)
 
         let uid = "\(getuid())"
-        let bootoutExit = await shellRun("/bin/launchctl", args: ["bootout", "user/\(uid)/\(launchLabel)"])
+        let (bootoutExit, bootoutErr) = await shellRun("/bin/launchctl", args: ["bootout", "gui/\(uid)/\(launchLabel)"])
         if bootoutExit != 0 {
             await MainActor.run {
                 snap.phase = .error
-                snap.lastDiagnostic = "Could not unload LaunchAgent. Refresh status or check Logs."
+                snap.lastDiagnostic = bootoutErr.isEmpty
+                    ? "Could not unload LaunchAgent (launchctl exit \(bootoutExit))."
+                    : bootoutErr
             }
             await refreshStatus()
             return
@@ -735,20 +791,25 @@ struct AgentSettingsTab: View {
         _ = deadlineMs  // intentional Phase 2 signature
     }
 
+    /// Returns (exitCode, stderrOutput). Stderr is captured so callers can surface real launchctl errors.
     @discardableResult
-    private func shellRun(_ cmd: String, args: [String]) async -> Int32 {
+    private func shellRun(_ cmd: String, args: [String]) async -> (Int32, String) {
         await withCheckedContinuation { continuation in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: cmd)
             process.arguments = args
             process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
+            let errPipe = Pipe()
+            process.standardError = errPipe
             do {
                 try process.run()
                 process.waitUntilExit()
-                continuation.resume(returning: process.terminationStatus)
+                let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+                let errStr = String(data: errData, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                continuation.resume(returning: (process.terminationStatus, errStr))
             } catch {
-                continuation.resume(returning: -1)
+                continuation.resume(returning: (-1, error.localizedDescription))
             }
         }
     }
@@ -756,17 +817,29 @@ struct AgentSettingsTab: View {
     // MARK: - Log helpers
 
     private func openLogFile() {
-        let logURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".mio/agent.log")
-        NSWorkspace.shared.open(logURL)
+        if snap.logFileExists {
+            let logURL = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".mio/agent.log")
+            NSWorkspace.shared.open(logURL)
+        } else {
+            // No log yet — open ~/.mio/ directory so user can inspect the folder
+            NSWorkspace.shared.open(mioDir)
+        }
     }
 
     private func copyLastLinesOfLog(count: Int) {
-        guard let content = try? String(contentsOfFile: logPath, encoding: .utf8) else { return }
-        let lines = content.components(separatedBy: "\n")
-        let lastLines = Array(lines.suffix(count)).joined(separator: "\n")
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(lastLines, forType: .string)
+        if snap.logFileExists,
+           let content = try? String(contentsOfFile: logPath, encoding: .utf8) {
+            let lines = content.components(separatedBy: "\n")
+            let lastLines = Array(lines.suffix(count)).joined(separator: "\n")
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(lastLines, forType: .string)
+        } else {
+            // No log file: copy last diagnostic so user can share it
+            let diag = snap.lastDiagnostic ?? "No agent log. The agent has not started successfully yet."
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(diag, forType: .string)
+        }
     }
 
     // MARK: - LaunchAgent plist
