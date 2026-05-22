@@ -536,8 +536,14 @@ struct AgentSettingsTab: View {
         let sockExists = fm.fileExists(atPath: socketPath)
         let logExists = fm.fileExists(atPath: logPath)
 
-        // LaunchAgent loaded: launchctl list <label> exits 0 if found in current domain.
-        // Works from GUI app context (gui/<uid> domain). Shell context returns non-zero.
+        // LaunchAgent loaded: `launchctl list <label>` exits 0 if the service is visible in the
+        // current launchctl session domain. Install uses `bootstrap user/$(uid)` (the user domain),
+        // not `gui/<uid>` (the GUI app domain) — these are distinct launchd domains in modern macOS.
+        // TODO(#79 smoke): verify in real MioIsland app context that this probe returns 0 for a
+        // job registered via `bootstrap user/$uid`. If it returns false-negative (job is loaded but
+        // probe returns 1), consider switching to `launchctl print user/$(uid)/<label>` to match
+        // the bootstrap domain, or checking the plist file existence as a fallback.
+        // This only affects status display (Start/Stop control flow uses bootstrap-first/kickstart).
         let launchLoaded = binExists ? await shellCheck("/bin/launchctl", args: ["list", launchLabel]) : false
 
         // Process running via pgrep
