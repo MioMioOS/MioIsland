@@ -668,14 +668,6 @@ struct AgentSettingsTab: View {
             snap.lastDiagnostic = L10n.agentDiagInstalling
         }
 
-        guard let srcPath = Bundle.main.path(forResource: "mio-agent", ofType: nil) else {
-            await MainActor.run {
-                snap.phase = .error
-                snap.lastDiagnostic = L10n.agentDiagBundleNotFound
-            }
-            return
-        }
-
         let mioDir = (binaryPath as NSString).deletingLastPathComponent
         let launchAgentsDir = (plistPath as NSString).deletingLastPathComponent
 
@@ -683,13 +675,22 @@ struct AgentSettingsTab: View {
             try FileManager.default.createDirectory(atPath: mioDir, withIntermediateDirectories: true)
             try FileManager.default.createDirectory(atPath: launchAgentsDir, withIntermediateDirectories: true)
 
-            if FileManager.default.fileExists(atPath: binaryPath) {
-                try FileManager.default.removeItem(atPath: binaryPath)
-            }
-            try FileManager.default.copyItem(atPath: srcPath, toPath: binaryPath)
-            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binaryPath)
+            // Download, verify (SHA-256), extract, and atomically install the daemon binary
+            // from the GitHub Release artifact. This replaces the old bundle-lookup approach
+            // (Bundle.main.path forResource:"mio-agent") — the Resources phase is intentionally
+            // empty; the binary is always fetched fresh from the pinned release tag (#121).
+            //
+            // No-overwrite-on-fail: MioAgentDistribution only writes to binaryPath after all
+            // verification passes; any earlier failure leaves the existing binary intact.
+            try await MioAgentDistribution.downloadAndInstall(
+                to: binaryPath,
+                onProgress: { [self] msg in
+                    Task { @MainActor in snap.lastDiagnostic = msg }
+                }
+            )
 
             // Ad-hoc codesign required on Apple Silicon for launchd/Keychain access
+            await MainActor.run { snap.lastDiagnostic = "Signing binary..." }
             await shellRun("/usr/bin/codesign", args: ["--sign", "-", "--force", binaryPath])
 
             let plistContent = launchAgentPlist()
