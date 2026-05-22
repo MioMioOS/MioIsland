@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# safe-install-app.sh — Replace /Applications/Mio Island.app without nesting.
+#
+# Usage:
+#   ./scripts/safe-install-app.sh /path/to/built/"Mio Island.app"
+#
+# What this script does (in order):
+#   1. Validates the source .app exists and is a real Mio Island bundle.
+#   2. Quits any running "Mio Island" process gracefully (SIGTERM → wait → SIGKILL).
+#   3. Removes the old /Applications/Mio Island.app (avoids cp -R nesting bug).
+#   4. Copies the new bundle into /Applications/.
+#   5. Clears Gatekeeper quarantine so the app opens without prompts.
+#   6. Verifies the installed CFBundleIdentifier matches the expected value.
+#
+# Background (why this matters):
+#   `cp -R source.app /Applications/existing.app` nests source INSIDE destination
+#   instead of replacing it. You end up opening the old outer bundle.
+#   The fix is: rm -rf first, then cp -R into the PARENT directory.
+#
+# Incident reference: 2026-05-22 — the old /Applications/Mio Island.app contained
+#   the new build nested at /Applications/Mio Island.app/Mio Island.app, so Laurent
+#   was running the old version even after the "install". (@운위 caught and un-nested.)
+
+set -euo pipefail
+
+EXPECTED_BUNDLE_ID="com.codeisland.app"
+TARGET="/Applications/Mio Island.app"
+APP_PROCESS_NAME="Mio Island"
+
+# ── 1. Validate source ────────────────────────────────────────────────────────
+
+SOURCE="${1:-}"
+if [[ -z "$SOURCE" ]]; then
+    echo "Usage: $0 /path/to/built/\"Mio Island.app\""
+    exit 1
+fi
+
+if [[ ! -d "$SOURCE" ]]; then
+    echo "Error: source not found or not a directory: $SOURCE"
+    exit 1
+fi
+
+# Confirm it's the right bundle by checking CFBundleIdentifier.
+SOURCE_BUNDLE_ID=$(defaults read "$SOURCE/Contents/Info" CFBundleIdentifier 2>/dev/null || true)
+if [[ "$SOURCE_BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ]]; then
+    echo "Error: source bundle ID is '$SOURCE_BUNDLE_ID', expected '$EXPECTED_BUNDLE_ID'."
+    echo "Are you pointing at the right .app?"
+    exit 1
+fi
+
+echo "Source verified: $SOURCE ($SOURCE_BUNDLE_ID)"
+
+# ── 2. Quit running instance ──────────────────────────────────────────────────
+
+if pgrep -x "$APP_PROCESS_NAME" > /dev/null 2>&1; then
+    echo "Quitting running '$APP_PROCESS_NAME'..."
+    # Try graceful quit via AppleScript first.
+    osascript -e "quit app \"$APP_PROCESS_NAME\"" 2>/dev/null || true
+    # Give it 3 seconds to exit cleanly.
+    sleep 3
+    # If still running, force-kill.
+    if pgrep -x "$APP_PROCESS_NAME" > /dev/null 2>&1; then
+        echo "  Still running — sending SIGKILL..."
+        pkill -KILL -x "$APP_PROCESS_NAME" 2>/dev/null || true
+        sleep 1
+    fi
+    echo "  Done."
+else
+    echo "No running '$APP_PROCESS_NAME' found — skipping quit."
+fi
+
+# ── 3. Remove old bundle ──────────────────────────────────────────────────────
+# CRITICAL: rm -rf first. cp -R into an existing .app nests source inside target.
+
+if [[ -e "$TARGET" ]]; then
+    echo "Removing old bundle: $TARGET"
+    rm -rf "$TARGET"
+fi
+
+# ── 4. Copy new bundle ───────────────────────────────────────────────────────
+
+echo "Copying $SOURCE → /Applications/"
+cp -R "$SOURCE" "/Applications/"
+
+# ── 5. Clear Gatekeeper quarantine ───────────────────────────────────────────
+
+echo "Clearing quarantine attribute..."
+xattr -rd com.apple.quarantine "$TARGET" 2>/dev/null || true
+
+# ── 6. Verify installed bundle ───────────────────────────────────────────────
+
+INSTALLED_BUNDLE_ID=$(defaults read "$TARGET/Contents/Info" CFBundleIdentifier 2>/dev/null || true)
+if [[ "$INSTALLED_BUNDLE_ID" != "$EXPECTED_BUNDLE_ID" ]]; then
+    echo "ERROR: Installed bundle ID mismatch: got '$INSTALLED_BUNDLE_ID', expected '$EXPECTED_BUNDLE_ID'."
+    echo "Installation may be corrupt — check $TARGET manually."
+    exit 1
+fi
+
+INSTALLED_VERSION=$(defaults read "$TARGET/Contents/Info" CFBundleShortVersionString 2>/dev/null || echo "unknown")
+INSTALLED_BUILD=$(defaults read "$TARGET/Contents/Info" CFBundleVersion 2>/dev/null || echo "unknown")
+echo ""
+echo "✅ Install complete."
+echo "   Path:    $TARGET"
+echo "   Version: $INSTALLED_VERSION ($INSTALLED_BUILD)"
+echo "   Bundle:  $INSTALLED_BUNDLE_ID"
+echo ""
+echo "To launch:"
+echo "   open \"$TARGET\""
