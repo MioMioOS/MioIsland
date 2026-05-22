@@ -98,11 +98,28 @@ fi
 
 INSTALLED_VERSION=$(defaults read "$TARGET/Contents/Info" CFBundleShortVersionString 2>/dev/null || echo "unknown")
 INSTALLED_BUILD=$(defaults read "$TARGET/Contents/Info" CFBundleVersion 2>/dev/null || echo "unknown")
+
+# ── 7. No-nesting assertion ───────────────────────────────────────────────────
+# After cp -R into the PARENT dir, the bundle must NOT contain itself as a child.
+# If nesting occurred, source was accidentally copied INTO target instead of replacing it.
+
+NESTED_CHECK="$TARGET/$(basename "$SOURCE")"
+if [[ -e "$NESTED_CHECK" ]]; then
+    echo "ERROR: Nesting detected — $NESTED_CHECK exists inside the installed bundle!"
+    echo "This means the install procedure copied source INTO target instead of replacing it."
+    echo "Remove the nested bundle manually: rm -rf \"$NESTED_CHECK\""
+    exit 1
+fi
+echo "No-nesting assertion: OK"
+
 echo ""
 echo "✅ Install complete."
 echo "   Path:    $TARGET"
 echo "   Version: $INSTALLED_VERSION ($INSTALLED_BUILD)"
 echo "   Bundle:  $INSTALLED_BUNDLE_ID"
 echo ""
-echo "To launch:"
+echo "To launch and verify running path:"
 echo "   open \"$TARGET\""
+echo "   # After launch, run the following to confirm the process is from /Applications:"
+echo "   lsappinfo list | grep -A2 'Mio Island' | grep 'bundle path'"
+echo "   # Expected: bundle path = $TARGET"
