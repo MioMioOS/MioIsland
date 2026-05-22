@@ -410,8 +410,10 @@ struct AgentSettingsTab: View {
             actionInProgress = true
             lastActionMessage = L10n.isChinese ? "正在启动…" : "Starting…"
         }
+        // After a `bootout` the job is unloaded; must `bootstrap` again to load it.
+        // `kickstart` only works when the job is already loaded — not safe after Stop.
         let uid = "\(getuid())"
-        await shellRun("/bin/launchctl", args: ["kickstart", "-k", "user/\(uid)/\(launchLabel)"])
+        await shellRun("/bin/launchctl", args: ["bootstrap", "user/\(uid)", plistPath])
         await refreshStatus()
         await MainActor.run {
             lastActionMessage = processRunning
@@ -426,9 +428,12 @@ struct AgentSettingsTab: View {
             actionInProgress = true
             lastActionMessage = L10n.isChinese ? "正在停止…" : "Stopping…"
         }
+        // Use `bootout` to fully unload the job. `kill SIGTERM` does NOT stop a
+        // KeepAlive job — launchd immediately restarts it after the process exits.
+        // Phase 2 NOTE: this is not drain-safe (IPC drain / irreversible action
+        // wait is not implemented yet). Full drain-safe Stop = Phase 2.
         let uid = "\(getuid())"
-        await shellRun("/bin/launchctl", args: ["kill", "SIGTERM", "user/\(uid)/\(launchLabel)"])
-        try? await Task.sleep(nanoseconds: 1_200_000_000)  // give process time to drain
+        await shellRun("/bin/launchctl", args: ["bootout", "user/\(uid)/\(launchLabel)"])
         await refreshStatus()
         await MainActor.run {
             lastActionMessage = processRunning
@@ -476,6 +481,8 @@ struct AgentSettingsTab: View {
             <true/>
             <key>KeepAlive</key>
             <true/>
+            <key>ExitTimeOut</key>
+            <integer>15</integer>
             <key>StandardOutPath</key>
             <string>\(home)/.mio/agent.log</string>
             <key>StandardErrorPath</key>
