@@ -258,6 +258,13 @@ struct AgentSettingsTab: View {
             )
             Divider().opacity(0.3)
             lifecycleRow(
+                icon: "gearshape.fill",
+                title: "Config",
+                path: configPath,
+                state: snap.configExists ? ("Present", Theme.success) : ("Missing — run mio-agent login", Theme.warning)
+            )
+            Divider().opacity(0.3)
+            lifecycleRow(
                 icon: "gear",
                 title: "LaunchAgent",
                 path: launchLabel,
@@ -351,9 +358,10 @@ struct AgentSettingsTab: View {
             // Setup required hint: shown when agent.json is missing
             if snap.phase == .notConfigured {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Run this command in Terminal to configure the agent:")
+                    Text("Run this command in Terminal, then enter your server URL (e.g. https://mio.wdao.chat) when prompted:")
                         .font(.system(size: 10))
                         .foregroundColor(Theme.subtle)
+                        .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 6) {
                         Text("mio-agent login")
                             .font(.system(size: 11, weight: .medium))
