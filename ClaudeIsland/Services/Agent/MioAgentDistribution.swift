@@ -41,6 +41,12 @@ enum MioAgentDistribution {
         "mio-agent-\(pinnedVersion)-darwin-arm64.tar.gz"
     }
 
+    /// Name of the SEA binary INSIDE the tarball (build-release.mjs packs it as this name).
+    /// Keep in sync with `seaBinary` in scripts/build-release.mjs in the mio-agent repo.
+    static var binaryFilename: String {
+        "mio-agent-\(pinnedVersion)-darwin-arm64"
+    }
+
     /// GitHub Releases base URL for the pinned release tag.
     static var releaseBaseURL: URL {
         URL(string: "https://github.com/\(repoOwner)/\(repoName)/releases/download/v\(pinnedVersion)/")!
@@ -116,8 +122,12 @@ enum MioAgentDistribution {
     ///
     /// Caller is responsible for:
     ///   - Creating parent directories before calling this function.
-    ///   - Ad-hoc codesigning the installed binary (required for launchd/Keychain on Apple Silicon).
-    ///   - Writing the LaunchAgent plist and calling launchctl bootstrap after install succeeds.
+    ///   - Codesigning the installed binary. For the current ad-hoc-signed release,
+    ///     `codesign --sign - --force <path>` is harmless. If the release ships a
+    ///     Developer-ID signature in future, probe the existing signature first —
+    ///     do NOT ad-hoc re-sign (it strips the notarisation seal).
+    ///   - Writing the LaunchAgent plist and calling `launchctl bootstrap gui/<uid>`
+    ///     (NOT `user/<uid>` — that is the #114/#79 domain bug) after install succeeds.
     static func downloadAndInstall(
         to destinationPath: String,
         onProgress: @escaping @Sendable (String) -> Void
@@ -202,8 +212,11 @@ enum MioAgentDistribution {
         }
 
         // ── Step 6: Locate the binary inside the extracted tree ──
+        //
+        // build-release.mjs packs the SEA binary as "mio-agent-<ver>-darwin-arm64"
+        // (NOT plain "mio-agent"). Use binaryFilename to match the actual name.
 
-        guard let extractedBinary = findFile(named: "mio-agent", in: extractDir) else {
+        guard let extractedBinary = findFile(named: binaryFilename, in: extractDir) else {
             throw DownloadError.binaryNotFoundInTarball
         }
 
