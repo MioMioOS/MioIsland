@@ -410,10 +410,18 @@ struct AgentSettingsTab: View {
             actionInProgress = true
             lastActionMessage = L10n.isChinese ? "正在启动…" : "Starting…"
         }
-        // After a `bootout` the job is unloaded; must `bootstrap` again to load it.
-        // `kickstart` only works when the job is already loaded — not safe after Stop.
         let uid = "\(getuid())"
-        await shellRun("/bin/launchctl", args: ["bootstrap", "user/\(uid)", plistPath])
+        // Decide bootstrap vs kickstart based on whether the job is already loaded.
+        //   - Loaded (job in launchd domain, process may be stopped/crashed) → `kickstart -k`
+        //     to restart without re-registering the plist.
+        //   - Not loaded (after bootout or first install) → `bootstrap` to register the plist.
+        // This handles the edge case where the job is loaded but the process crashed:
+        // `bootstrap` would fail with "service already loaded"; `kickstart -k` restarts it.
+        if await isJobLoaded() {
+            await shellRun("/bin/launchctl", args: ["kickstart", "-k", "user/\(uid)/\(launchLabel)"])
+        } else {
+            await shellRun("/bin/launchctl", args: ["bootstrap", "user/\(uid)", plistPath])
+        }
         await refreshStatus()
         await MainActor.run {
             lastActionMessage = processRunning
@@ -428,10 +436,14 @@ struct AgentSettingsTab: View {
             actionInProgress = true
             lastActionMessage = L10n.isChinese ? "正在停止…" : "Stopping…"
         }
+        // Phase 2 IPC drain hook — currently a no-op.
+        // Phase 2: replace with real IPC drain — send drain request via agent.sock,
+        // wait for irreversible in-flight actions to reach transmission_complete or
+        // needs_human before proceeding, with a hard deadline (spec: 8s / ExitTimeOut=15s).
+        await requestDrain(deadlineMs: 8_000)
+
         // Use `bootout` to fully unload the job. `kill SIGTERM` does NOT stop a
         // KeepAlive job — launchd immediately restarts it after the process exits.
-        // Phase 2 NOTE: this is not drain-safe (IPC drain / irreversible action
-        // wait is not implemented yet). Full drain-safe Stop = Phase 2.
         let uid = "\(getuid())"
         await shellRun("/bin/launchctl", args: ["bootout", "user/\(uid)/\(launchLabel)"])
         await refreshStatus()
@@ -441,6 +453,27 @@ struct AgentSettingsTab: View {
                 : (L10n.isChinese ? "已停止" : "Stopped")
             actionInProgress = false
         }
+    }
+
+    /// Check whether the LaunchAgent job is currently registered in the launchd user domain.
+    /// Uses the domain-aware form `launchctl print user/<uid>/<label>` (exit 0 = job loaded)
+    /// rather than legacy `launchctl list <label>`, consistent with the bootstrap/bootout/kickstart
+    /// domain specifiers used elsewhere in this file.
+    private func isJobLoaded() async -> Bool {
+        let uid = "\(getuid())"
+        return await shellCheck("launchctl", args: ["print", "user/\(uid)/\(launchLabel)"])
+    }
+
+    /// IPC drain stub — no-op in Phase 1.
+    ///
+    /// Phase 2 implementation: open a Unix socket connection to `socketPath` (agent.sock),
+    /// send a drain request, and await acknowledgment that no irreversible actions are in-flight,
+    /// or until `deadlineMs` elapses (whichever comes first). On deadline, proceed with bootout
+    /// anyway — the agent's ExitTimeOut=15s provides a final safety window.
+    private func requestDrain(deadlineMs: Int) async {
+        // Phase 1: no IPC socket exists yet. Return immediately.
+        // Phase 2: replace this body with real socket drain logic.
+        _ = deadlineMs  // suppress unused-warning; parameter intentional for Phase 2 signature
     }
 
     @discardableResult
