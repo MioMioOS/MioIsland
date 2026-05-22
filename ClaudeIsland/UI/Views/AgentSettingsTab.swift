@@ -456,12 +456,17 @@ struct AgentSettingsTab: View {
     }
 
     /// Check whether the LaunchAgent job is currently registered in the launchd user domain.
-    /// Uses the domain-aware form `launchctl print user/<uid>/<label>` (exit 0 = job loaded)
-    /// rather than legacy `launchctl list <label>`, consistent with the bootstrap/bootout/kickstart
-    /// domain specifiers used elsewhere in this file.
+    ///
+    /// Uses `launchctl list <label>` (exit 0 = loaded, non-zero = not found/error).
+    /// Empirically verified on macOS: `list` reliably returns exit 0 for a loaded job and
+    /// non-zero (e.g. 113) when the label is absent. `launchctl print user/<uid>/<label>`
+    /// was tested and found to return exit 113 even for a loaded job in some shell contexts,
+    /// so it is NOT used here despite appearing more domain-aware.
+    ///
+    /// Note: GUI app context (MioIsland launch) vs. shell context may differ. If behavior
+    /// diverges, add an app-context smoke test when the install path is validated end-to-end.
     private func isJobLoaded() async -> Bool {
-        let uid = "\(getuid())"
-        return await shellCheck("launchctl", args: ["print", "user/\(uid)/\(launchLabel)"])
+        await shellCheck("launchctl", args: ["list", launchLabel])
     }
 
     /// IPC drain stub — no-op in Phase 1.
