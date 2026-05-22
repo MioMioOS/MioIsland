@@ -411,16 +411,21 @@ struct AgentSettingsTab: View {
             lastActionMessage = L10n.isChinese ? "正在启动…" : "Starting…"
         }
         let uid = "\(getuid())"
-        // Decide bootstrap vs kickstart based on whether the job is already loaded.
-        //   - Loaded (job in launchd domain, process may be stopped/crashed) → `kickstart -k`
-        //     to restart without re-registering the plist.
-        //   - Not loaded (after bootout or first install) → `bootstrap` to register the plist.
-        // This handles the edge case where the job is loaded but the process crashed:
-        // `bootstrap` would fail with "service already loaded"; `kickstart -k` restarts it.
-        if await isJobLoaded() {
+        // Bootstrap-first / kickstart-on-already-loaded pattern (idiomatic, no TOCTOU).
+        //
+        // Try `bootstrap` unconditionally:
+        //   - Not loaded → bootstrap succeeds (exit 0), job registered and started.
+        //   - Already loaded (process crashed or manually stopped) → bootstrap returns
+        //     non-zero ("service already loaded"); we fall back to `kickstart -k` which
+        //     restarts the process without re-registering the plist.
+        //
+        // This avoids a loaded-check TOCTOU race and sidesteps the `launchctl list` vs
+        // `launchctl print` exit-code ambiguity (which @运维 confirmed is unverifiable
+        // from a shell context — exit codes differ between shell and GUI app domains).
+        let bootstrapExit = await shellRun("/bin/launchctl", args: ["bootstrap", "user/\(uid)", plistPath])
+        if bootstrapExit != 0 {
+            // Job already loaded — restart the (possibly stopped/crashed) process.
             await shellRun("/bin/launchctl", args: ["kickstart", "-k", "user/\(uid)/\(launchLabel)"])
-        } else {
-            await shellRun("/bin/launchctl", args: ["bootstrap", "user/\(uid)", plistPath])
         }
         await refreshStatus()
         await MainActor.run {
@@ -453,20 +458,6 @@ struct AgentSettingsTab: View {
                 : (L10n.isChinese ? "已停止" : "Stopped")
             actionInProgress = false
         }
-    }
-
-    /// Check whether the LaunchAgent job is currently registered in the launchd user domain.
-    ///
-    /// Uses `launchctl list <label>` (exit 0 = loaded, non-zero = not found/error).
-    /// Empirically verified on macOS: `list` reliably returns exit 0 for a loaded job and
-    /// non-zero (e.g. 113) when the label is absent. `launchctl print user/<uid>/<label>`
-    /// was tested and found to return exit 113 even for a loaded job in some shell contexts,
-    /// so it is NOT used here despite appearing more domain-aware.
-    ///
-    /// Note: GUI app context (MioIsland launch) vs. shell context may differ. If behavior
-    /// diverges, add an app-context smoke test when the install path is validated end-to-end.
-    private func isJobLoaded() async -> Bool {
-        await shellCheck("launchctl", args: ["list", launchLabel])
     }
 
     /// IPC drain stub — no-op in Phase 1.
