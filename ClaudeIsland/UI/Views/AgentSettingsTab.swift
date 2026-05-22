@@ -359,7 +359,7 @@ struct AgentSettingsTab: View {
                     .foregroundColor(Theme.subtle)
 
                 HStack(spacing: 8) {
-                    accentButton(label: "Open log file", icon: "doc.text", enabled: snap.binaryExists) {
+                    accentButton(label: "Open log file", icon: "doc.text", enabled: snap.logFileExists) {
                         openLogFile()
                     }
                     outlineButton(label: "Copy last 100 lines", icon: "doc.on.clipboard", enabled: snap.logFileExists) {
