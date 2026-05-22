@@ -2,7 +2,12 @@
 # safe-install-app.sh — Replace /Applications/Mio Island.app without nesting.
 #
 # Usage:
-#   ./scripts/safe-install-app.sh /path/to/built/"Mio Island.app"
+#   ./scripts/safe-install-app.sh /path/to/built/"Mio Island.app" [--launch-verify]
+#
+# Flags:
+#   --launch-verify   After install, open the app and assert the running instance's
+#                     bundle path is /Applications/Mio Island.app (not DerivedData).
+#                     Exits non-zero if the wrong binary is running.
 #
 # What this script does (in order):
 #   1. Validates the source .app exists and is a real Mio Island bundle.
@@ -11,6 +16,9 @@
 #   4. Copies the new bundle into /Applications/.
 #   5. Clears Gatekeeper quarantine so the app opens without prompts.
 #   6. Verifies the installed CFBundleIdentifier matches the expected value.
+#   7. No-nesting assertion (ensures source was not nested inside target).
+#   8. [--launch-verify only] Opens the installed app and asserts lsappinfo shows
+#      bundle path = /Applications/Mio Island.app.
 #
 # Background (why this matters):
 #   `cp -R source.app /Applications/existing.app` nests source INSIDE destination
@@ -27,11 +35,36 @@ EXPECTED_BUNDLE_ID="com.codeisland.app"
 TARGET="/Applications/Mio Island.app"
 APP_PROCESS_NAME="Mio Island"
 
+# ── Argument parsing ──────────────────────────────────────────────────────────
+
+SOURCE=""
+LAUNCH_VERIFY=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --launch-verify)
+            LAUNCH_VERIFY=true
+            ;;
+        --*)
+            echo "Error: unknown flag: $arg"
+            echo "Usage: $0 /path/to/built/\"Mio Island.app\" [--launch-verify]"
+            exit 1
+            ;;
+        *)
+            if [[ -z "$SOURCE" ]]; then
+                SOURCE="$arg"
+            else
+                echo "Error: unexpected argument: $arg"
+                exit 1
+            fi
+            ;;
+    esac
+done
+
 # ── 1. Validate source ────────────────────────────────────────────────────────
 
-SOURCE="${1:-}"
 if [[ -z "$SOURCE" ]]; then
-    echo "Usage: $0 /path/to/built/\"Mio Island.app\""
+    echo "Usage: $0 /path/to/built/\"Mio Island.app\" [--launch-verify]"
     exit 1
 fi
 
@@ -112,14 +145,68 @@ if [[ -e "$NESTED_CHECK" ]]; then
 fi
 echo "No-nesting assertion: OK"
 
+# ── 8. Launch-verify (optional) ──────────────────────────────────────────────
+# Open the installed app and assert lsappinfo shows the correct bundle path.
+# This catches the case where the OS launches a stale DerivedData copy instead.
+
+if [[ "$LAUNCH_VERIFY" == "true" ]]; then
+    echo ""
+    echo "Launch-verify: opening $TARGET..."
+    open "$TARGET"
+
+    # Wait up to 10 seconds for the process to appear and register with lsappinfo.
+    VERIFY_TIMEOUT=10
+    VERIFY_ELAPSED=0
+    BUNDLE_PATH=""
+    while [[ $VERIFY_ELAPSED -lt $VERIFY_TIMEOUT ]]; do
+        sleep 1
+        VERIFY_ELAPSED=$((VERIFY_ELAPSED + 1))
+        # lsappinfo uses the display name; match case-insensitively to be safe.
+        BUNDLE_PATH=$(lsappinfo list 2>/dev/null \
+            | awk '/[Mm]io [Ii]sland/{found=1} found && /bundle path/{print; exit}' \
+            | sed 's/.*bundle path = *//' \
+            | tr -d '"')
+        if [[ -n "$BUNDLE_PATH" ]]; then
+            break
+        fi
+    done
+
+    if [[ -z "$BUNDLE_PATH" ]]; then
+        echo "ERROR: Launch-verify failed — '$APP_PROCESS_NAME' did not appear in lsappinfo after ${VERIFY_TIMEOUT}s."
+        echo "The app may have crashed on launch, or lsappinfo could not find it."
+        exit 1
+    fi
+
+    # Normalize trailing slash differences for comparison.
+    EXPECTED_BUNDLE_PATH="$TARGET"
+    ACTUAL_NORMALIZED="${BUNDLE_PATH%/}"
+    EXPECTED_NORMALIZED="${EXPECTED_BUNDLE_PATH%/}"
+
+    if [[ "$ACTUAL_NORMALIZED" != "$EXPECTED_NORMALIZED" ]]; then
+        echo "ERROR: Launch-verify FAILED — running instance is from the wrong path!"
+        echo "   Expected: $EXPECTED_BUNDLE_PATH"
+        echo "   Actual:   $BUNDLE_PATH"
+        echo "The OS may have launched a stale DerivedData or quarantined copy."
+        exit 1
+    fi
+
+    echo "Launch-verify: OK — running from $BUNDLE_PATH"
+fi
+
 echo ""
 echo "✅ Install complete."
 echo "   Path:    $TARGET"
 echo "   Version: $INSTALLED_VERSION ($INSTALLED_BUILD)"
 echo "   Bundle:  $INSTALLED_BUNDLE_ID"
+if [[ "$LAUNCH_VERIFY" == "true" ]]; then
+    echo "   Running: $BUNDLE_PATH (launch-verify passed)"
+fi
 echo ""
-echo "To launch and verify running path:"
-echo "   open \"$TARGET\""
-echo "   # After launch, run the following to confirm the process is from /Applications:"
-echo "   lsappinfo list | grep -A2 'Mio Island' | grep 'bundle path'"
-echo "   # Expected: bundle path = $TARGET"
+if [[ "$LAUNCH_VERIFY" != "true" ]]; then
+    echo "To launch and verify running path:"
+    echo "   open \"$TARGET\""
+    echo "   # After launch, run the following to confirm the process is from /Applications:"
+    echo "   lsappinfo list | grep -A2 'Mio Island' | grep 'bundle path'"
+    echo "   # Expected: bundle path = $TARGET"
+    echo "   # Or re-run with --launch-verify to automate this check."
+fi
