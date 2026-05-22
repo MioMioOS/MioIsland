@@ -61,47 +61,35 @@ enum AgentLifecyclePhase: Equatable {
 
     var primaryLabel: String {
         switch self {
-        case .checking:          return "Checking…"
-        case .notInstalled:      return "Not installed"
-        case .notConfigured:     return "Setup required"
-        case .installedUnloaded: return "Installed · stopped"
-        case .loadedStopped:     return "Loaded · not running"
-        case .starting:          return "Starting…"
-        case .runningHealthy:    return "Running"
-        case .runningUnhealthy:  return "Running · health check failed"
-        case .draining:          return "Stopping safely…"
-        case .stopping:          return "Stopping…"
-        case .error:             return "Action failed"
-        case .unknown:           return "Status unknown"
+        case .checking:          return L10n.agentPhaseLabelChecking
+        case .notInstalled:      return L10n.agentPhaseLabelNotInstalled
+        case .notConfigured:     return L10n.agentPhaseLabelNotConfigured
+        case .installedUnloaded: return L10n.agentPhaseLabelInstalledUnloaded
+        case .loadedStopped:     return L10n.agentPhaseLabelLoadedStopped
+        case .starting:          return L10n.agentPhaseLabelStarting
+        case .runningHealthy:    return L10n.agentPhaseLabelRunningHealthy
+        case .runningUnhealthy:  return L10n.agentPhaseLabelRunningUnhealthy
+        case .draining:          return L10n.agentPhaseLabelDraining
+        case .stopping:          return L10n.agentPhaseLabelStopping
+        case .error:             return L10n.agentPhaseLabelError
+        case .unknown:           return L10n.agentPhaseLabelUnknown
         }
     }
 
     var descriptionText: String {
         switch self {
-        case .checking:
-            return "Probing agent status…"
-        case .notInstalled:
-            return "Install the bundled mio-agent before starting local action execution."
-        case .notConfigured:
-            return "Agent is installed but not configured. Run mio-agent login in Terminal to set up before starting."
-        case .installedUnloaded:
-            return "The LaunchAgent is not running. Start it to prepare local action execution."
-        case .loadedStopped:
-            return "The job is loaded but the process is not running. Start will kickstart the job."
-        case .starting:
-            return "Wait; controls are disabled while the agent starts."
-        case .runningHealthy:
-            return "mio-agent is available on this Mac."
-        case .runningUnhealthy:
-            return "The process exists, but the local health endpoint did not respond."
-        case .draining:
-            return "Waiting for in-flight actions to reach a safe stopping point."
-        case .stopping:
-            return "The agent will be unloaded from launchd. Drain-safe stop is coming in Phase 2."
-        case .error:
-            return ""   // diagnostic carried in snap.lastDiagnostic
-        case .unknown:
-            return "Could not determine agent status. Refresh to try again."
+        case .checking:          return L10n.agentPhaseDescChecking
+        case .notInstalled:      return L10n.agentPhaseDescNotInstalled
+        case .notConfigured:     return L10n.agentPhaseDescNotConfigured
+        case .installedUnloaded: return L10n.agentPhaseDescInstalledUnloaded
+        case .loadedStopped:     return L10n.agentPhaseDescLoadedStopped
+        case .starting:          return L10n.agentPhaseDescStarting
+        case .runningHealthy:    return L10n.agentPhaseDescRunningHealthy
+        case .runningUnhealthy:  return L10n.agentPhaseDescRunningUnhealthy
+        case .draining:          return L10n.agentPhaseDescDraining
+        case .stopping:          return L10n.agentPhaseDescStopping
+        case .error:             return ""   // diagnostic carried in snap.lastDiagnostic
+        case .unknown:           return L10n.agentPhaseDescUnknown
         }
     }
 
@@ -135,7 +123,7 @@ struct AgentLifecycleSnapshot {
         guard let date = lastCheckedAt else { return "" }
         let fmt = DateFormatter()
         fmt.dateFormat = "HH:mm"
-        return "Last checked \(fmt.string(from: date))"
+        return L10n.agentLastChecked(fmt.string(from: date))
     }
 }
 
@@ -163,7 +151,7 @@ struct AgentSettingsTab: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             // Description
-            Text("Mio Agent is a background daemon that communicates with AI runtimes, fires actions, and reports results to MioServer.")
+            Text(L10n.agentTabDescription)
                 .font(.system(size: 11))
                 .foregroundColor(Theme.subtle)
 
@@ -171,19 +159,19 @@ struct AgentSettingsTab: View {
             overallStatusCard
 
             // MARK: Lifecycle detail rows
-            SectionLabel("Lifecycle")
+            SectionLabel(L10n.agentSectionLifecycle)
             lifecycleDetailRows
 
             // MARK: Controls
-            SectionLabel("Controls")
+            SectionLabel(L10n.agentSectionControls)
             controlsCard
 
             // MARK: Logs card
-            SectionLabel("Logs")
+            SectionLabel(L10n.agentSectionLogs)
             logsCard
 
             // MARK: Upcoming capabilities
-            SectionLabel("Capabilities (coming soon)")
+            SectionLabel(L10n.agentSectionCapabilities)
             upcomingCapabilitiesCard
         }
         .task { await refreshStatus() }
@@ -213,7 +201,7 @@ struct AgentSettingsTab: View {
                         .foregroundColor(Theme.detailText)
 
                     let desc = snap.phase == .error
-                        ? (snap.lastDiagnostic ?? "An error occurred.")
+                        ? (snap.lastDiagnostic ?? L10n.agentDiagErrorFallback)
                         : snap.phase.descriptionText
                     if !desc.isEmpty {
                         Text(desc)
@@ -252,54 +240,59 @@ struct AgentSettingsTab: View {
         SettingsListCard {
             lifecycleRow(
                 icon: "doc.fill",
-                title: "Binary",
+                title: L10n.agentRowBinary,
                 path: binaryPath,
-                state: snap.binaryExists ? ("Installed", Theme.success) : ("Missing", Theme.error)
+                state: snap.binaryExists
+                    ? (L10n.agentStateInstalled, Theme.success)
+                    : (L10n.agentStateMissing, Theme.error)
             )
             Divider().opacity(0.3)
             lifecycleRow(
                 icon: "gearshape.fill",
-                title: "Config",
+                title: L10n.agentRowConfig,
                 path: configPath,
-                state: snap.configExists ? ("Present", Theme.success) : ("Missing — run mio-agent login", Theme.warning)
+                state: snap.configExists
+                    ? (L10n.agentStateConfigPresent, Theme.success)
+                    : (L10n.agentStateConfigMissing, Theme.warning)
             )
             Divider().opacity(0.3)
             lifecycleRow(
                 icon: "gear",
-                title: "LaunchAgent",
+                title: L10n.agentRowLaunchAgent,
                 path: launchLabel,
                 state: {
                     switch snap.launchAgentLoaded {
-                    case .some(true):  return ("Loaded", Theme.success)
-                    case .some(false): return ("Unloaded", Theme.warning)
-                    case .none:        return ("Unknown", Theme.neutralDot)
+                    case .some(true):  return (L10n.agentStateLoaded, Theme.success)
+                    case .some(false): return (L10n.agentStateUnloaded, Theme.warning)
+                    case .none:        return (L10n.agentStateUnknown, Theme.neutralDot)
                     }
                 }()
             )
             Divider().opacity(0.3)
             lifecycleRow(
                 icon: "bolt.fill",
-                title: "Process",
+                title: L10n.agentRowProcess,
                 path: "mio-agent",
                 state: snap.processRunning
-                    ? ("Running", Theme.success)
-                    : ("Stopped", Theme.warning)
+                    ? (L10n.agentStateRunning, Theme.success)
+                    : (L10n.agentStateStopped, Theme.warning)
             )
             Divider().opacity(0.3)
             lifecycleRow(
                 icon: "heart.fill",
-                title: "Health",
+                title: L10n.agentRowHealth,
                 path: "127.0.0.1:7878",
                 state: snap.healthReachable
-                    ? ("OK", Theme.success)
-                    : (snap.processRunning ? "Failed" : "Unavailable", snap.processRunning ? Theme.error : Theme.neutralDot)
+                    ? (L10n.agentStateOK, Theme.success)
+                    : (snap.processRunning ? L10n.agentStateFailed : L10n.agentStateUnavailable,
+                       snap.processRunning ? Theme.error : Theme.neutralDot)
             )
             Divider().opacity(0.3)
             lifecycleRow(
                 icon: "point.3.connected.trianglepath.dotted",
-                title: "Socket",
+                title: L10n.agentRowSocket,
                 path: "~/.mio/agent.sock",
-                state: ("Pending Phase 2", Theme.neutralDot),
+                state: (L10n.agentStateSocketPending, Theme.neutralDot),
                 isLast: true
             )
         }
@@ -314,7 +307,7 @@ struct AgentSettingsTab: View {
                 // Install: shown when not installed
                 if !snap.binaryExists {
                     accentButton(
-                        label: "Install",
+                        label: L10n.agentButtonInstall,
                         icon: "arrow.down.circle.fill",
                         enabled: !snap.isBusy
                     ) { await installAgent() }
@@ -324,7 +317,7 @@ struct AgentSettingsTab: View {
                 if snap.binaryExists && snap.configExists && !snap.processRunning
                     && snap.phase != .starting && snap.phase != .stopping {
                     accentButton(
-                        label: "Start",
+                        label: L10n.agentButtonStart,
                         icon: "play.fill",
                         enabled: !snap.isBusy
                     ) { await startAgent() }
@@ -334,7 +327,7 @@ struct AgentSettingsTab: View {
                 if snap.processRunning || snap.launchAgentLoaded == true {
                     if snap.phase != .starting && snap.phase != .stopping {
                         outlineButton(
-                            label: "Stop",
+                            label: L10n.agentButtonStop,
                             icon: "stop.fill",
                             enabled: !snap.isBusy
                         ) { await stopAgent() }
@@ -358,7 +351,7 @@ struct AgentSettingsTab: View {
             // Setup required hint: shown when agent.json is missing
             if snap.phase == .notConfigured {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Run this command in Terminal, then enter your server URL (e.g. https://mio.wdao.chat) when prompted:")
+                    Text(L10n.agentSetupHintCommand)
                         .font(.system(size: 10))
                         .foregroundColor(Theme.subtle)
                         .fixedSize(horizontal: false, vertical: true)
@@ -379,7 +372,7 @@ struct AgentSettingsTab: View {
                                 .foregroundColor(Theme.subtle)
                         }
                         .buttonStyle(.plain)
-                        .help("Copy command")
+                        .help(L10n.agentSetupHintCopy)
                     }
                 }
                 .padding(.top, 4)
@@ -401,21 +394,21 @@ struct AgentSettingsTab: View {
     private var logsCard: some View {
         SettingsCard {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Use logs for install/start/stop diagnostics. Sensitive values are not expected here.")
+                Text(L10n.agentLogsHint)
                     .font(.system(size: 10))
                     .foregroundColor(Theme.subtle)
 
                 HStack(spacing: 8) {
-                    accentButton(label: "Open log file", icon: "doc.text", enabled: true) {
+                    accentButton(label: L10n.agentButtonOpenLog, icon: "doc.text", enabled: true) {
                         openLogFile()
                     }
-                    outlineButton(label: "Copy last 100 lines", icon: "doc.on.clipboard", enabled: true) {
+                    outlineButton(label: L10n.agentButtonCopyLog, icon: "doc.on.clipboard", enabled: true) {
                         copyLastLinesOfLog(count: 100)
                     }
                 }
 
                 if !snap.logFileExists {
-                    Text("No agent log yet — ~/.mio/agent.log will be created once the agent starts successfully.")
+                    Text(L10n.agentLogsEmpty)
                         .font(.system(size: 10))
                         .foregroundColor(Theme.subtle.opacity(0.7))
                         .fixedSize(horizontal: false, vertical: true)
@@ -431,23 +424,23 @@ struct AgentSettingsTab: View {
         SettingsListCard {
             unavailableRow(
                 icon: "bolt.horizontal.fill",
-                label: "Action execution",
-                sublabel: "Requires Phase 2 IPC — runtime adapter integration"
+                label: L10n.agentCapActionExecution,
+                sublabel: L10n.agentCapActionDesc
             )
             unavailableRow(
                 icon: "rectangle.3.group.fill",
-                label: "Workroom binding",
-                sublabel: "Requires MioServer human-auth cursor"
+                label: L10n.agentCapWorkroom,
+                sublabel: L10n.agentCapWorkroomDesc
             )
             unavailableRow(
                 icon: "list.bullet.rectangle.fill",
-                label: "Log streaming",
-                sublabel: "Requires IPC socket integration"
+                label: L10n.agentCapLogStreaming,
+                sublabel: L10n.agentCapLogStreamingDesc
             )
             unavailableRow(
                 icon: "arrow.up.circle.fill",
-                label: "Auto-upgrade (SMAppService)",
-                sublabel: "Requires upgrade.ts re-register mechanism",
+                label: L10n.agentCapAutoUpgrade,
+                sublabel: L10n.agentCapAutoUpgradeDesc,
                 isLast: true
             )
         }
@@ -559,7 +552,7 @@ struct AgentSettingsTab: View {
         isLast: Bool = false
     ) -> some View {
         SettingRow(icon: icon, label: label, sublabel: sublabel, isLast: isLast) {
-            Text("Soon")
+            Text(L10n.agentCapSoon)
                 .font(.system(size: 10, weight: .medium))
                 .foregroundColor(Theme.subtle)
                 .padding(.horizontal, 8)
@@ -659,13 +652,13 @@ struct AgentSettingsTab: View {
     private func installAgent() async {
         await MainActor.run {
             snap.phase = .starting
-            snap.lastDiagnostic = "Installing…"
+            snap.lastDiagnostic = L10n.agentDiagInstalling
         }
 
         guard let srcPath = Bundle.main.path(forResource: "mio-agent", ofType: nil) else {
             await MainActor.run {
                 snap.phase = .error
-                snap.lastDiagnostic = "mio-agent was not found in the app bundle."
+                snap.lastDiagnostic = L10n.agentDiagBundleNotFound
             }
             return
         }
@@ -696,7 +689,7 @@ struct AgentSettingsTab: View {
             if bootstrapExit != 0 {
                 await MainActor.run {
                     snap.lastDiagnostic = bootstrapErr.isEmpty
-                        ? "Could not register LaunchAgent (launchctl exit \(bootstrapExit))."
+                        ? L10n.agentDiagBootstrapFailed(bootstrapExit)
                         : bootstrapErr
                 }
             } else {
@@ -705,7 +698,7 @@ struct AgentSettingsTab: View {
         } catch {
             await MainActor.run {
                 snap.phase = .error
-                snap.lastDiagnostic = "Install failed: \(error.localizedDescription)"
+                snap.lastDiagnostic = L10n.agentDiagInstallFailed(error.localizedDescription)
             }
             await refreshStatus()
             return
@@ -717,7 +710,7 @@ struct AgentSettingsTab: View {
     private func startAgent() async {
         await MainActor.run {
             snap.phase = .starting
-            snap.lastDiagnostic = "Starting…"
+            snap.lastDiagnostic = L10n.agentDiagStarting
         }
         let uid = "\(getuid())"
         // Bootstrap-first / kickstart-on-already-loaded pattern into gui/$uid
@@ -735,7 +728,7 @@ struct AgentSettingsTab: View {
                 } else if !bootstrapErr.isEmpty {
                     diagMsg = bootstrapErr
                 } else {
-                    diagMsg = "Start failed (bootstrap exit \(bootstrapExit), kickstart exit \(kickExit))."
+                    diagMsg = L10n.agentDiagStartFailed(bootstrapExit: bootstrapExit, kickExit: kickExit)
                 }
                 await MainActor.run {
                     snap.phase = .error
@@ -748,7 +741,7 @@ struct AgentSettingsTab: View {
         await refreshStatus()
         await MainActor.run {
             if snap.phase != .runningHealthy && snap.phase != .runningUnhealthy {
-                snap.lastDiagnostic = "Start command sent — verify status above."
+                snap.lastDiagnostic = L10n.agentDiagStartSent
             } else {
                 snap.lastDiagnostic = nil
             }
@@ -758,7 +751,7 @@ struct AgentSettingsTab: View {
     private func stopAgent() async {
         await MainActor.run {
             snap.phase = .stopping
-            snap.lastDiagnostic = "Stopping…"
+            snap.lastDiagnostic = L10n.agentDiagStopping
         }
 
         // TODO(Phase2): Replace with real IPC drain — send drain request via agent.sock,
@@ -773,7 +766,7 @@ struct AgentSettingsTab: View {
             await MainActor.run {
                 snap.phase = .error
                 snap.lastDiagnostic = bootoutErr.isEmpty
-                    ? "Could not unload LaunchAgent (launchctl exit \(bootoutExit))."
+                    ? L10n.agentDiagStopFailed(bootoutExit)
                     : bootoutErr
             }
             await refreshStatus()
@@ -783,7 +776,7 @@ struct AgentSettingsTab: View {
         await refreshStatus()
         await MainActor.run {
             if snap.processRunning {
-                snap.lastDiagnostic = "Process still running after stop request."
+                snap.lastDiagnostic = L10n.agentDiagProcessStillRunning
             } else {
                 snap.lastDiagnostic = nil
             }
@@ -844,7 +837,7 @@ struct AgentSettingsTab: View {
             NSPasteboard.general.setString(lastLines, forType: .string)
         } else {
             // No log file: copy last diagnostic so user can share it
-            let diag = snap.lastDiagnostic ?? "No agent log. The agent has not started successfully yet."
+            let diag = snap.lastDiagnostic ?? L10n.agentDiagNoLog
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(diag, forType: .string)
         }

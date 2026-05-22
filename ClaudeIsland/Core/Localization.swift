@@ -559,4 +559,167 @@ enum L10n {
         default: return ThemeRegistry.shared.displayName(for: id)
         }
     }
+
+    // MARK: - Mio Agent Settings (AgentSettingsTab)
+
+    // Phase primary labels
+    static var agentPhaseLabelChecking: String       { tr("Checking…",                      "检查中…") }
+    static var agentPhaseLabelNotInstalled: String   { tr("Not installed",                  "未安装") }
+    static var agentPhaseLabelNotConfigured: String  { tr("Setup required",                 "需要配置") }
+    static var agentPhaseLabelInstalledUnloaded: String { tr("Installed · stopped",         "已安装 · 未启动") }
+    static var agentPhaseLabelLoadedStopped: String  { tr("Loaded · not running",           "已加载 · 未运行") }
+    static var agentPhaseLabelStarting: String       { tr("Starting…",                      "启动中…") }
+    static var agentPhaseLabelRunningHealthy: String { tr("Running",                        "运行中") }
+    static var agentPhaseLabelRunningUnhealthy: String { tr("Running · health check failed","运行中 · 健康检查失败") }
+    static var agentPhaseLabelDraining: String       { tr("Stopping safely…",              "安全停止中…") }
+    static var agentPhaseLabelStopping: String       { tr("Stopping…",                     "停止中…") }
+    static var agentPhaseLabelError: String          { tr("Action failed",                  "操作失败") }
+    static var agentPhaseLabelUnknown: String        { tr("Status unknown",                 "状态未知") }
+
+    // Phase description text
+    static var agentPhaseDescChecking: String { tr(
+        "Probing agent status…",
+        "正在探测 agent 状态…"
+    ) }
+    static var agentPhaseDescNotInstalled: String { tr(
+        "Install the bundled mio-agent before starting local action execution.",
+        "请先安装内置的 mio-agent 以启动本地动作执行。"
+    ) }
+    static var agentPhaseDescNotConfigured: String { tr(
+        "Agent is installed but not configured. Run mio-agent login in Terminal to set up before starting.",
+        "Agent 已安装但未配置。请在终端运行 mio-agent login 完成配置后再启动。"
+    ) }
+    static var agentPhaseDescInstalledUnloaded: String { tr(
+        "The LaunchAgent is not running. Start it to prepare local action execution.",
+        "LaunchAgent 未运行。启动它以准备本地动作执行。"
+    ) }
+    static var agentPhaseDescLoadedStopped: String { tr(
+        "The job is loaded but the process is not running. Start will kickstart the job.",
+        "任务已加载但进程未运行。点击启动将重新拉起进程。"
+    ) }
+    static var agentPhaseDescStarting: String { tr(
+        "Wait; controls are disabled while the agent starts.",
+        "请等待；agent 启动期间操作禁用。"
+    ) }
+    static var agentPhaseDescRunningHealthy: String { tr(
+        "mio-agent is available on this Mac.",
+        "mio-agent 已在此 Mac 上运行。"
+    ) }
+    static var agentPhaseDescRunningUnhealthy: String { tr(
+        "The process exists, but the local health endpoint did not respond.",
+        "进程存在，但本地健康检查端点未响应。"
+    ) }
+    static var agentPhaseDescDraining: String { tr(
+        "Waiting for in-flight actions to reach a safe stopping point.",
+        "等待进行中的动作到达安全停止点。"
+    ) }
+    static var agentPhaseDescStopping: String { tr(
+        "The agent will be unloaded from launchd. Drain-safe stop is coming in Phase 2.",
+        "Agent 将从 launchd 卸载。Phase 2 将支持安全排空停止。"
+    ) }
+    static var agentPhaseDescUnknown: String { tr(
+        "Could not determine agent status. Refresh to try again.",
+        "无法确定 agent 状态。刷新以重试。"
+    ) }
+
+    // Tab description
+    static var agentTabDescription: String { tr(
+        "Mio Agent is a background daemon that communicates with AI runtimes, fires actions, and reports results to MioServer.",
+        "Mio Agent 是一个后台守护进程，负责与 AI 运行时通信、触发动作并将结果上报至 MioServer。"
+    ) }
+
+    // Section labels
+    static var agentSectionLifecycle: String    { tr("Lifecycle",              "生命周期") }
+    static var agentSectionControls: String     { tr("Controls",               "控制") }
+    static var agentSectionLogs: String         { tr("Logs",                   "日志") }
+    static var agentSectionCapabilities: String { tr("Capabilities (coming soon)", "能力（即将推出）") }
+
+    // Lifecycle row labels
+    static var agentRowBinary: String      { tr("Binary",      "可执行文件") }
+    static var agentRowConfig: String      { tr("Config",      "配置文件") }
+    static var agentRowLaunchAgent: String { tr("LaunchAgent", "LaunchAgent") }
+    static var agentRowProcess: String     { tr("Process",     "进程") }
+    static var agentRowHealth: String      { tr("Health",      "健康检查") }
+    static var agentRowSocket: String      { tr("Socket",      "套接字") }
+
+    // Lifecycle state pills
+    static var agentStateInstalled: String     { tr("Installed",   "已安装") }
+    static var agentStateMissing: String       { tr("Missing",     "缺失") }
+    static var agentStateConfigPresent: String { tr("Present",     "存在") }
+    static var agentStateConfigMissing: String { tr("Missing — run mio-agent login", "缺失 — 请运行 mio-agent login") }
+    static var agentStateLoaded: String        { tr("Loaded",      "已加载") }
+    static var agentStateUnloaded: String      { tr("Unloaded",    "未加载") }
+    static var agentStateRunning: String       { tr("Running",     "运行中") }
+    static var agentStateStopped: String       { tr("Stopped",     "已停止") }
+    static var agentStateOK: String            { tr("OK",          "正常") }
+    static var agentStateFailed: String        { tr("Failed",      "失败") }
+    static var agentStateUnavailable: String   { tr("Unavailable", "不可用") }
+    static var agentStateSocketPending: String { tr("Pending Phase 2", "Phase 2 开放") }
+    static var agentStateUnknown: String       { tr("Unknown",     "未知") }
+
+    // Button labels
+    static var agentButtonInstall: String  { tr("Install",           "安装") }
+    static var agentButtonStart: String    { tr("Start",             "启动") }
+    static var agentButtonStop: String     { tr("Stop",              "停止") }
+    static var agentButtonOpenLog: String  { tr("Open log file",     "打开日志文件") }
+    static var agentButtonCopyLog: String  { tr("Copy last 100 lines", "复制最后 100 行") }
+
+    // Setup required hint
+    static var agentSetupHintCommand: String { tr(
+        "Run this command in Terminal, then enter your server URL (e.g. https://mio.wdao.chat) when prompted:",
+        "在终端运行此命令，按提示输入服务器 URL（如 https://mio.wdao.chat）："
+    ) }
+    static var agentSetupHintCopy: String { tr("Copy command", "复制命令") }
+
+    // Logs card
+    static var agentLogsHint: String { tr(
+        "Use logs for install/start/stop diagnostics. Sensitive values are not expected here.",
+        "使用日志诊断安装/启动/停止问题。此处不应包含敏感信息。"
+    ) }
+    static var agentLogsEmpty: String { tr(
+        "No agent log yet — ~/.mio/agent.log will be created once the agent starts successfully.",
+        "暂无 agent 日志 — agent 成功启动后将创建 ~/.mio/agent.log。"
+    ) }
+
+    // Capabilities card
+    static var agentCapSoon: String               { tr("Soon",                             "即将推出") }
+    static var agentCapActionExecution: String    { tr("Action execution",                 "动作执行") }
+    static var agentCapActionDesc: String         { tr("Requires Phase 2 IPC — runtime adapter integration", "需要 Phase 2 IPC — 运行时适配器集成") }
+    static var agentCapWorkroom: String           { tr("Workroom binding",                 "工作室绑定") }
+    static var agentCapWorkroomDesc: String       { tr("Requires MioServer human-auth cursor", "需要 MioServer 人工鉴权游标") }
+    static var agentCapLogStreaming: String        { tr("Log streaming",                   "日志流") }
+    static var agentCapLogStreamingDesc: String   { tr("Requires IPC socket integration", "需要 IPC socket 集成") }
+    static var agentCapAutoUpgrade: String        { tr("Auto-upgrade (SMAppService)",      "自动升级（SMAppService）") }
+    static var agentCapAutoUpgradeDesc: String    { tr("Requires upgrade.ts re-register mechanism", "需要 upgrade.ts 重注册机制") }
+
+    // Diagnostic / action messages
+    static var agentDiagInstalling: String          { tr("Installing…",              "安装中…") }
+    static var agentDiagBundleNotFound: String      { tr("mio-agent was not found in the app bundle.", "在应用包中未找到 mio-agent。") }
+    static var agentDiagStarting: String            { tr("Starting…",               "启动中…") }
+    static var agentDiagStartSent: String           { tr("Start command sent — verify status above.", "启动命令已发送 — 请查看上方状态。") }
+    static var agentDiagStopping: String            { tr("Stopping…",               "停止中…") }
+    static var agentDiagProcessStillRunning: String { tr("Process still running after stop request.", "停止请求后进程仍在运行。") }
+    static func agentDiagBootstrapFailed(_ exit: Int32) -> String {
+        tr("Could not register LaunchAgent (launchctl exit \(exit)).",
+           "LaunchAgent 注册失败（launchctl 退出码 \(exit)）。")
+    }
+    static func agentDiagInstallFailed(_ msg: String) -> String {
+        tr("Install failed: \(msg)", "安装失败：\(msg)")
+    }
+    static func agentDiagStartFailed(bootstrapExit: Int32, kickExit: Int32) -> String {
+        tr("Start failed (bootstrap exit \(bootstrapExit), kickstart exit \(kickExit)).",
+           "启动失败（bootstrap 退出码 \(bootstrapExit)，kickstart 退出码 \(kickExit)）。")
+    }
+    static func agentDiagStopFailed(_ exit: Int32) -> String {
+        tr("Could not unload LaunchAgent (launchctl exit \(exit)).",
+           "无法卸载 LaunchAgent（launchctl 退出码 \(exit)）。")
+    }
+    static var agentDiagErrorFallback: String { tr("An error occurred.", "发生了错误。") }
+    static var agentDiagNoLog: String { tr(
+        "No agent log. The agent has not started successfully yet.",
+        "暂无 agent 日志。Agent 尚未成功启动。"
+    ) }
+    static func agentLastChecked(_ time: String) -> String {
+        tr("Last checked \(time)", "最后检查 \(time)")
+    }
 }
