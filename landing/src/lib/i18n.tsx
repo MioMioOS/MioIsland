@@ -112,6 +112,12 @@ const translations = {
   "codelight.showcase.chat": { zh: "实时查看 Claude 工作进展", en: "Watch Claude work in real time" },
   "codelight.showcase.workflow": { zh: "远程操控 Claude 编写代码", en: "Remotely control Claude coding" },
   "codelight.showcase.appstore": { zh: "App Store 上架 · 扫码配对", en: "On the App Store · Scan to pair" },
+  // v12 imagery (alt text for accessibility / SEO)
+  "codelight.hero.alt": { zh: "iPhone 锁屏与灵动岛实时显示 Claude 工作状态", en: "iPhone lock screen and Dynamic Island showing live Claude status" },
+  "codelight.hero.caption": { zh: "Mac 在跑，iPhone 同步亮着 · 离开工位也能看见", en: "What lights up your Mac also lights up your iPhone" },
+  "v12.01.alt": { zh: "iPhone 锁屏与灵动岛 Live Activity 实时显示 AI 代理状态", en: "iPhone lock screen with AI agent status in Dynamic Island Live Activity" },
+  "v12.02.alt": { zh: "MacBook 上运行的 Code Light，旁边是已配对的 iPhone", en: "MacBook running Code Light with paired iPhone alongside" },
+  "v12.03.alt": { zh: "Mac 显示配对二维码，iPhone 在前景扫码", en: "Mac displaying pairing QR, iPhone scanning in foreground" },
 
   // How It Works (3-step)
   "how.tag": { zh: "快速上手", en: "GET STARTED" },

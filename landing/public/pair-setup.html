@@ -107,16 +107,41 @@
   .step ul, .step ol { padding-left: 20px; margin: 6px 0 10px; color: var(--text-muted); }
   .step ul li, .step ol li { margin-bottom: 4px; }
   .screenshot {
-    margin: 12px 0 8px;
+    margin: 16px 0 12px;
     background: var(--bg-card);
-    border: 1px dashed var(--border-strong);
-    border-radius: 10px;
-    padding: 28px 18px;
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    padding: 14px;
     text-align: center;
     color: var(--text-dim);
     font-size: 13px;
     line-height: 1.55;
   }
+  /* Legacy placeholder mode (kept for any "[截图]" blocks without real image) */
+  .screenshot.placeholder { border-style: dashed; padding: 28px 18px; }
+  .screenshot picture { display: block; margin: 0 auto; }
+  .screenshot img {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    max-height: 540px;
+    height: auto;
+    border-radius: 8px;
+    background: #0c0d0f;
+  }
+  .screenshot .caption {
+    margin: 12px 8px 2px;
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.55;
+  }
+  .screenshot.pair { display: flex; flex-wrap: wrap; gap: 14px; padding: 14px; }
+  .screenshot.pair > figure {
+    flex: 1 1 240px; margin: 0; padding: 0;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .screenshot.pair figure img { max-height: 480px; }
+  .screenshot.pair figcaption { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
   .screenshot strong {
     display: block; color: var(--lime);
     font-weight: 600; margin-bottom: 4px;
@@ -242,9 +267,11 @@
         </li>
       </ul>
       <div class="screenshot">
-        <strong>[截图 01]</strong>
-        App Store 上的 Code Light 产品页 + Mac 上已装好的 Mio Island 图标
-        <span class="hint">截图建议: iPhone App Store 下载页面 + Mac dock/刘海上的 Mio Island 图标</span>
+        <picture>
+          <source srcset="pair-setup/step0-app-store.webp" type="image/webp">
+          <img src="pair-setup/step0-app-store.jpg" alt="iPhone App Store · Code Light 详情页面" loading="lazy" decoding="async">
+        </picture>
+        <p class="caption">iPhone App Store · 搜索 "Code Light" — 灵动岛 AI 编码会话监控,中国大陆已上架。Mac 端通过上面的 brew 命令安装。</p>
       </div>
     </div>
   </section>
@@ -257,83 +284,76 @@
       <p>启动 Mio Island 后, 鼠标移到刘海上, 菜单展开 → 点 <strong>Pair iPhone</strong>。</p>
       <p class="note">或者: 系统设置 → <strong>CodeLight</strong> 标签 → 右上 "配对新手机" 按钮。</p>
       <div class="screenshot">
-        <strong>[截图 02]</strong>
-        Mio Island 刘海菜单 / 系统设置 CodeLight 面板的 "Pair iPhone" 入口
-        <span class="hint">截图建议: 刘海展开态, "Pair iPhone" 那一行被鼠标悬停高亮</span>
+        <picture>
+          <source srcset="pair-setup/step1-mac-codelight.webp" type="image/webp">
+          <img src="pair-setup/step1-mac-codelight.jpg" alt="Mac 系统设置 · CodeLight 面板,显示已配对 iPhone 和启动预设" loading="lazy" decoding="async">
+        </picture>
+        <p class="caption">Mio Island · 系统设置 → CodeLight 标签。右上角绿色 "配对 iPhone" 按钮就是入口,下方还能看到 cmux 启动预设。</p>
       </div>
     </div>
   </section>
 
-  <!-- STEP 2 -->
+  <!-- STEP 2 (merged: server URL + QR/code) -->
   <section class="step">
     <div class="num">2</div>
     <div>
-      <h2>填入服务器地址</h2>
-      <p>首次打开会看到一个服务器机架图标 + 输入框。直接填官方服务器地址:</p>
+      <h2>填服务器地址,拿到二维码 + 6 位配对码</h2>
+      <p>首次打开会看到服务器 URL 输入框,填官方地址:</p>
       <pre>https://code.7ove.online</pre>
-      <p>点 <strong>Save and Connect</strong>, 等 1-2 秒连接。</p>
-      <div class="screenshot">
-        <strong>[截图 03]</strong>
-        未配置状态下的服务器 URL 输入面板, 已填入 https://code.7ove.online
-        <span class="hint">截图建议: 柠檬绿卡片, 中间服务器机架图标 + 输入框里已有 code.7ove.online + "Save and Connect" 按钮高亮</span>
-      </div>
-      <div class="callout info">
-        <span class="label">💡 为什么走官方服务器</span>
-        CodeLight 所有功能 (Dynamic Island 实时推送、多端同步、远程审批、会话转发) 都走服务器中转, 协议端到端加密, 服务器只做零知识转发、不落盘、不记 IP 日志, 看不到消息明文。官方服务器已经调优好 APNs 推送、并发控制、试用/订阅状态管理, 直接用最省事。地址仅保存在你本机 UserDefaults, 不上传任何地方。
-      </div>
-    </div>
-  </section>
-
-  <!-- STEP 3 -->
-  <section class="step">
-    <div class="num">3</div>
-    <div>
-      <h2>获取二维码和 6 位配对码</h2>
-      <p>连接成功后, 面板会切到配对就绪状态:</p>
+      <p>点 <strong>Save and Connect</strong>, 等 1-2 秒。连接成功后,面板自动切到配对就绪状态:</p>
       <ul>
         <li>中间是 <strong>二维码</strong> (约 160×160), iPhone 直接扫</li>
-        <li>下面是 <strong>6 位大字配对码</strong> (比如 <code>X7K2M9</code>), 也可以手动输入</li>
+        <li>下面是 <strong>6 位大字配对码</strong> (示例 <code>XXXXXX</code>), 也可以手动输入</li>
         <li>底部两个胶囊: 服务器地址 (点击可改) + 当前 Mac 设备名</li>
       </ul>
       <div class="screenshot">
-        <strong>[截图 04]</strong>
-        配对就绪态: 二维码 + 6 位配对码同屏显示
-        <span class="hint">截图建议: 同一张图同时显示 QR code + 下面的大字码 X7K2M9, 加两个胶囊 (服务器 pill + 设备名 pill)</span>
+        <picture>
+          <source srcset="pair-setup/step3-mac-qr.webp" type="image/webp">
+          <img src="pair-setup/step3-mac-qr.jpg" alt="Mac 配对弹窗:二维码 + 6 位字符配对码 + 服务器/设备胶囊 + Linked Devices 列表" loading="lazy" decoding="async">
+        </picture>
+        <p class="caption">配对面板:中央 QR 码 + 下方 6 位字符配对码,两个胶囊显示服务器 <code>code.7ove.online</code> 和设备名,Linked Devices 列出已配对 iPhone,底部"已有兑换码"可输入 10 天免费兑换码。</p>
       </div>
       <div class="callout info">
-        <span class="label">💡 配对码永久有效</span>
-        同一个码可以配多台 iPhone (工作 + 私人机), 不过期、不自动刷新。只有换服务器才重新生成。
+        <span class="label">💡 关于服务器和配对码</span>
+        官方服务器已经调好 APNs 推送 + 并发控制 + 订阅校验,直接用最省事。协议端到端加密,服务器零知识转发(隐私细节看下面 FAQ)。<br>
+        配对码永久有效,同一个码可以配多台 iPhone (办公 + 私人机),不过期、不自动刷新。只有换服务器才重新生成。
       </div>
     </div>
   </section>
 
-  <!-- STEP 4 -->
+  <!-- STEP 3 (was STEP 4) -->
   <section class="step">
-    <div class="num">4</div>
+    <div class="num">3</div>
     <div>
       <h2>在 iPhone 上打开 CodeLight 并配对</h2>
       <p>下载 CodeLight 后首次启动, 会看到配对引导:</p>
       <ul>
         <li><strong>方式 A · 扫码</strong>: 允许相机权限 → 对准 Mac 上的二维码 → 服务器地址 + 配对码自动填好</li>
-        <li><strong>方式 B · 手输</strong>: 服务器 URL 填 <code>https://code.7ove.online</code>, 配对码填上面那个 6 位 <code>X7K2M9</code></li>
+        <li><strong>方式 B · 手输</strong>: 服务器 URL 填 <code>https://code.7ove.online</code>, 配对码填 Mac 上显示的 6 位字符</li>
         <li>点 "配对" 按钮, 等 1-2 秒</li>
       </ul>
-      <div class="screenshot">
-        <strong>[截图 05]</strong>
-        iPhone CodeLight 首屏 · 配对输入界面
-        <span class="hint">截图建议: iPhone 竖屏, 输入框里显示 code.7ove.online + 配对码输入光标</span>
-      </div>
-      <div class="screenshot">
-        <strong>[截图 06]</strong>
-        iPhone 扫描 Mac 二维码的现场照
-        <span class="hint">截图建议: 用另一个设备拍手机扫 Mac 屏幕 QR 的画面</span>
+      <div class="screenshot pair">
+        <figure>
+          <picture>
+            <source srcset="pair-setup/step4-iphone-scan.webp" type="image/webp">
+            <img src="pair-setup/step4-iphone-scan.jpg" alt="iPhone CodeLight · 扫描二维码 tab,提示扫描 Mac 上显示的二维码" loading="lazy" decoding="async">
+          </picture>
+          <figcaption>方式 A · 扫码 — 选 "扫描二维码" tab,允许相机权限,对准 Mac 上的 QR。</figcaption>
+        </figure>
+        <figure>
+          <picture>
+            <source srcset="pair-setup/step2-iphone-server.webp" type="image/webp">
+            <img src="pair-setup/step2-iphone-server.jpg" alt="iPhone CodeLight · 输入代码 tab,服务器 URL code.7ove.online 加 6 位配对码" loading="lazy" decoding="async">
+          </picture>
+          <figcaption>方式 B · 手输 — 选 "输入代码" tab,填服务器 URL + Mac 上显示的 6 位配对码。</figcaption>
+        </figure>
       </div>
     </div>
   </section>
 
-  <!-- STEP 5 -->
+  <!-- STEP 4 (was STEP 5) -->
   <section class="step">
-    <div class="num">5</div>
+    <div class="num">4</div>
     <div>
       <h2>验证两端连接</h2>
       <ul>
@@ -341,42 +361,56 @@
         <li><strong>Mac 刘海菜单</strong>: "Pair iPhone" 那一行右侧出现柠檬绿点 + "Online" 字样</li>
         <li><strong>iPhone 端</strong>: "Macs" 列表里多出这台 Mac</li>
       </ul>
-      <div class="screenshot">
-        <strong>[截图 07]</strong>
-        Mac "Linked Devices" 区块显示 iPhone 已连接
-        <span class="hint">截图建议: 展开后面板下半部分, 可见 "Linked Devices 1" + iPhone 条目</span>
-      </div>
-      <div class="screenshot">
-        <strong>[截图 08]</strong>
-        iPhone CodeLight Macs 列表显示 Mac 已配对
-        <span class="hint">截图建议: iPhone 主界面 Macs 列表第一条是刚配的 Mac 名字 + 绿色小点</span>
+      <div class="screenshot pair">
+        <figure>
+          <picture>
+            <source srcset="pair-setup/step5-mac-desktop.webp" type="image/webp">
+            <img src="pair-setup/step5-mac-desktop.jpg" alt="Mac 桌面 · 顶部刘海 CodeLight ×2 状态条 + 系统设置 CodeLight 面板含 Linked Devices 4 台 iPhone" loading="lazy" decoding="async">
+          </picture>
+          <figcaption>Mac 端 · 顶部刘海出现 "CodeLight ×N" 状态条,系统设置 CodeLight 面板下方 Linked Devices 列出 iPhone。</figcaption>
+        </figure>
+        <figure>
+          <picture>
+            <source srcset="pair-setup/step4-iphone-paired.webp" type="image/webp">
+            <img src="pair-setup/step4-iphone-paired.jpg" alt="iPhone CodeLight · Macs 列表显示 Carey 的 MacBook Pro 在线 (绿色小点)" loading="lazy" decoding="async">
+          </picture>
+          <figcaption>iPhone 端 · "Macs" 主列表里多出这台 Mac,前面绿点表示在线;点进去能看到这台 Mac 上所有 Claude 会话。</figcaption>
+        </figure>
       </div>
     </div>
   </section>
 
-  <!-- STEP 6 -->
+  <!-- STEP 5 (was STEP 6) -->
   <section class="step">
-    <div class="num">6</div>
+    <div class="num">5</div>
     <div>
-      <h2>开启 Hooks (实时状态同步)</h2>
-      <p>配对只是建了通道, 要让 Claude Code 状态真正实时流过去, 需要 Mio Island 监听它。</p>
-      <p>系统设置 → <strong>通用</strong> → 找 <strong>钩子</strong> 开关, 确认打开 (绿色)。</p>
-      <p class="note">首次启动自动安装, 没开手动打开即可。</p>
+      <h2>开启 Hooks · 验证转发链路</h2>
+      <p>配对只是建了通道,要让 Claude Code 状态真正流到 iPhone,还得保证 Mac 端的输入 (hook) + 转发 (cmux) 两侧都通。打开:</p>
+      <p>系统设置 → <strong>cmux 连接</strong> 标签,看四项诊断:</p>
+      <ul>
+        <li><strong>cmux 命令行</strong> · 已找到 (绿点)</li>
+        <li><strong>辅助功能权限</strong> · 已授权 (绿点)。<em>未授权会导致 AppleScript 转发静默失败 — 点下方 "修复辅助功能权限" 按钮跳转系统授权页</em></li>
+        <li><strong>自动化权限</strong> · cmux ✓ (绿点)。未授权点 "修复自动化权限"</li>
+        <li><strong>检测到的 Claude 会话数</strong> · &gt; 0 (绿点)</li>
+      </ul>
+      <p class="note">点 <strong>测试发送</strong> 按钮,iPhone 锁屏几百毫秒内应该看到 Live Activity 弹出一条测试消息 — 链路就通了。</p>
       <div class="screenshot">
-        <strong>[截图 09]</strong>
-        系统设置 · 通用 · "钩子" 开关 ON
-        <span class="hint">截图建议: 设置窗口截图, 聚焦 General tab 里 "钩子" 那个 toggle 亮着绿色</span>
+        <picture>
+          <source srcset="pair-setup/step5-cmux-conn.webp" type="image/webp">
+          <img src="pair-setup/step5-cmux-conn.jpg" alt="Mac 系统设置 · cmux 连接 tab,四项诊断:cmux 命令行已找到、辅助功能权限、自动化权限、Claude 会话数 11,下方有 测试发送 / 刷新 / 修复 按钮" loading="lazy" decoding="async">
+        </picture>
+        <p class="caption">cmux 连接面板 · 四项诊断 + 测试发送按钮。任何一项红点 → 点下方对应的 "修复" 按钮一键跳转授权页;全绿 + 测试发送收到推送 = 转发链路 OK。</p>
       </div>
       <div class="callout info">
-        <span class="label">💡 Hook 做什么</span>
-        安装一个 Python 脚本到 <code>~/.claude/hooks/codeisland-state.py</code>, 配到 Claude Code 的 <code>~/.claude/settings.json</code>. 每次 Claude 状态变化 (开始 / 跑工具 / 完成 / 审批) 通过 Unix socket 推给 Mio Island, 再通过服务器转发到 iPhone. 纯本地 IPC, 不走网络。
+        <span class="label">💡 这里看的是什么</span>
+        Claude Code 的状态 (开始 / 跑工具 / 完成 / 审批) 通过本地 Unix socket 推给 Mio Island,Mio Island 通过 AppleScript / cmux 自动化转发,再走服务器到 iPhone APNs。任何一环掉链子 (cmux 没装 / 权限被关 / Claude 没在跑) 都会在这个 tab 看到红点。
       </div>
     </div>
   </section>
 
-  <!-- STEP 7 -->
+  <!-- STEP 6 (was STEP 7) -->
   <section class="step">
-    <div class="num">7</div>
+    <div class="num">6</div>
     <div>
       <h2>跑一次真实会话验证</h2>
       <ol>
@@ -386,9 +420,11 @@
         <li>几百毫秒内三端同步显示 "Working..." / 工具名 / 完成</li>
       </ol>
       <div class="screenshot">
-        <strong>[截图 10]</strong>
-        Mac 刘海 + iPhone Dynamic Island 同一时刻显示同一个会话状态
-        <span class="hint">截图建议: 两张同时刻的图合成, 左 Mac 刘海, 右 iPhone 锁屏 Live Activity</span>
+        <picture>
+          <source srcset="pair-setup/step7-sync-cafe.webp" type="image/webp">
+          <img src="pair-setup/step7-sync-cafe.jpg" alt="咖啡馆场景 · Mac 上跑 Claude Code,iPhone 同时显示当前对话状态" loading="lazy" decoding="async">
+        </picture>
+        <p class="caption">真实使用场景:Mac 上的 Claude 会话,iPhone 同时显示对话内容 — 端在 Mac,眼可以离开桌面。</p>
       </div>
     </div>
   </section>
@@ -402,12 +438,12 @@
 
       <div class="pricing-card">
         <h3>免费试用 <span class="price">· 3 天</span></h3>
-        <p>App Store 下载后首次连服务器, 自动开 3 天全功能试用, 无需信用卡。服务器侧记录 <code>trialStartedAt</code> / <code>trialExpiresAt</code> 时间戳, 期间体验完整 Dynamic Island、远程审批、多端切换。</p>
+        <p>App Store 下载后首次连服务器自动开 3 天全功能试用,无需信用卡。</p>
       </div>
 
       <div class="pricing-card">
-        <h3>买断解锁 <span class="price">· $13.99 一次付</span></h3>
-        <p>试用到期后 App 内购买, 永久解锁 (同 Apple ID 全设备恢复购买)。服务器通过 Apple App Store Server API 校验 <code>originalTransactionId</code>。同账户最多 3 台设备同时在线 (办公 + 家里 + iPad 正好)。</p>
+        <h3>买断解锁 <span class="price">· ¥98 终身</span></h3>
+        <p>App 内一次性购买,永久解锁。同 Apple ID 跨设备恢复,最多 3 台并发在线 (办公 + 家里 + iPad)。</p>
       </div>
 
       <div class="pricing-card" style="border-color: rgba(198,255,58,0.3); background: rgba(198,255,58,0.04);">
@@ -415,36 +451,46 @@
         <p>参与 <strong>"发一条, 免费用"</strong> 活动:</p>
         <ul style="margin: 8px 0 4px; padding-left: 18px;">
           <li>在任意公开平台 (小红书 / X / B站 / 即刻 / Twitter) 发一条关于 Mio Island 或 CodeLight 的内容 (体验、吐槽、教程都行)</li>
-          <li>截图或链接私信给开发者 (WeChat / 小红书 / X DM)</li>
-          <li>审核通过 → 发 <strong>30 天免费兑换码</strong></li>
-          <li>30 天后再发一条, 继续拿码 — <strong>持续产出 = 持续免费</strong></li>
+          <li>打开下方自助领取页 → 选平台 → 贴链接 → 上传截图 → 通过人机验证 → <strong>当场拿到兑换码</strong></li>
+          <li>同一 IP 24 小时限领 1 次, 每轮 30 个名额抢完即止</li>
+          <li>授权用完再发一条, 继续来领 — <strong>持续产出 = 持续免费</strong></li>
         </ul>
-        <p style="margin-top: 10px; font-size: 0.9em; opacity: 0.85;">
-          <strong>v3.0.0+ 兑换流程</strong>: 在 <strong>Mac 端 Mio Island</strong> 的 Pair Phone 面板里有「兑换码」一栏, 输入码后 Mac 端的 trial 状态会自动通过 DeviceLink 同步给已配对的 iPhone (Apple Guideline 3.1.1 要求, 兑换入口从 iOS App 迁到 Mac 端)。
+
+        <p style="margin: 14px 0 8px;">
+          <a href="https://admin.miomio.chat/claim/claim-2026-text-promo-1"
+             target="_blank" rel="noopener"
+             style="display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px;
+                    background: var(--lime); color: #0a0b0d; font-weight: 700;
+                    border-radius: 8px; text-decoration: none; font-size: 14px;">
+            🎯 立即领取兑换码 →
+          </a>
+        </p>
+        <p style="margin: 0 0 4px; font-size: 12.5px; color: var(--text-dim);">
+          领取地址: <code style="word-break: break-all;">https://admin.miomio.chat/claim/claim-2026-text-promo-1</code>
+        </p>
+
+        <div class="screenshot pair" style="margin-top: 14px;">
+          <figure>
+            <picture>
+              <source srcset="pair-setup/claim-form.webp" type="image/webp">
+              <img src="pair-setup/claim-form.jpg" alt="兑换码自助领取表单:选平台、贴帖子链接、上传截图、Cloudflare 人机验证、提交领取" loading="lazy" decoding="async">
+            </picture>
+            <figcaption>① 领取表单 · 选平台 + 贴链接 + 上传推广截图 + Cloudflare 验证 → 提交</figcaption>
+          </figure>
+          <figure>
+            <picture>
+              <source srcset="pair-setup/claim-success.webp" type="image/webp">
+              <img src="pair-setup/claim-success.jpg" alt="领取成功页:FREE-XXXXXX 兑换码大字显示 + 复制按钮 + 授权天数 + 使用前必读" loading="lazy" decoding="async">
+            </picture>
+            <figcaption>② 领取成功 · 兑换码立刻显示 (<code>FREE-XXXXXX</code> 格式) + 复制按钮 + 授权时长。<strong>请立刻截图保存</strong>,刷新页面后码不再显示。</figcaption>
+          </figure>
+        </div>
+
+        <p style="margin-top: 12px; font-size: 0.9em; opacity: 0.85;">
+          <strong>v3.0.0+ 兑换流程</strong>: 在 <strong>Mac 端 Mio Island</strong> 的 Pair Phone 面板底部「已有兑换码」一栏输入 <code>FREE-XXXXXX</code>, Mac 端 trial 状态会自动通过 DeviceLink 同步给已配对的 iPhone (Apple Guideline 3.1.1 要求, 兑换入口从 iOS App 迁到 Mac 端)。
         </p>
       </div>
 
-      <div class="callout info">
-        <span class="label">💡 服务器侧怎么校验的</span>
-        每个 socket 连接握手时, 服务器跑 <code>checkAccess()</code>: trial 过期自动改状态拒连、兑换码过期也拒、付费用户查 StoreKit 凭证 + 3 台并发限制。所以把官方地址 <code>code.7ove.online</code> 写进教程是安全的 — 无凭证连不上。
-      </div>
-
-    </div>
-  </section>
-
-  <!-- 进阶 -->
-  <section class="step">
-    <div class="num">+</div>
-    <div>
-      <h2>进阶操作</h2>
-      <p><strong>换服务器</strong>: 点 Pair 面板下方的服务器胶囊 (带铅笔图标) → 输入新 URL → Save. 之前配过的 iPhone 要重新扫码。</p>
-      <p><strong>解绑单台 iPhone</strong>: "Linked Devices" 每一条最右边的 ✕ 按钮。</p>
-      <p><strong>完全重置</strong>: 系统设置 → CodeLight → 删除所有 linked devices, 再清空服务器 URL。</p>
-      <div class="screenshot">
-        <strong>[截图 11]</strong>
-        点服务器胶囊进入 "Change Server" 编辑态
-        <span class="hint">截图建议: 胶囊被点击后面板切换到 URL 编辑模式, 下面有 Cancel + Save 两个按钮</span>
-      </div>
     </div>
   </section>
 
@@ -453,84 +499,55 @@
     <h2>常见问题</h2>
 
     <details>
-      <summary>服务器 URL 填什么?</summary>
-      <p>固定填官方地址 <code>https://code.7ove.online</code>。CodeLight 的 APNs 推送、并发控制、试用/订阅状态、兑换码校验都在这个服务器上。</p>
-    </details>
-
-    <details>
-      <summary>CodeLight 怎么免费用?</summary>
-      <p>两条路:</p>
+      <summary>CodeLight 多少钱?有没有免费方案?</summary>
+      <p>三档:</p>
       <ul>
-        <li><strong>App Store 下载后 3 天免费试用</strong> — 无需信用卡, 首次连接自动开始</li>
-        <li><strong>发内容换 30 天兑换码</strong> — 公开平台发一条 (体验 / 教程 / 吐槽都行), 截图私信开发者, 审核通过就发码. 每 30 天发一条, 持续免费</li>
+        <li><strong>3 天免费试用</strong> — App Store 下载首次连服务器自动开,无需信用卡</li>
+        <li><strong>¥98 终身买断</strong> — 同 Apple ID 3 台并发,支持恢复购买</li>
+        <li><strong>持续 0 元用</strong> — 公开平台发一条内容,自助页 (上面付费 section 那个柠檬绿按钮) 当场领 10 天兑换码,授权用完再发再领</li>
       </ul>
-      <p>彻底长期用, 直接 $13.99 买断, 三台设备通用, 支持 Apple ID 恢复购买。</p>
     </details>
 
     <details>
       <summary>服务器能看到我的代码 / 消息吗?</summary>
-      <p>不能。协议端到端加密 (Ed25519 签名 + 对称加密), 服务器只做消息转发, 不落盘、不记日志、不记 IP, 看不到消息内容。</p>
-      <p>服务器数据库只存最小化运行信息: 设备配对码、试用/付费状态、最后连接时间、APNs 推送 token, 从不保存消息内容、代码文件或任何你在 Claude Code 里输入的内容。</p>
+      <p>不能。协议端到端加密 (Ed25519 签名 + 对称加密),服务器只做转发 — 不落盘、不记日志、不记 IP。</p>
+      <p>服务器数据库只存运行必需的最小信息:设备配对码、试用/付费状态、最后连接时间、APNs 推送 token。代码、消息、文件一概不存。</p>
     </details>
 
     <details>
-      <summary>服务器 URL 保存不了 / 一直转圈</summary>
-      <p>检查:</p>
+      <summary>连不上 / 二维码出不来 / 一直转圈</summary>
+      <p>按顺序排查:</p>
       <ul>
-        <li>URL 必须 <code>https://</code> 或 <code>http://</code> 开头</li>
-        <li>网络能到达 — 浏览器打开 <code>https://code.7ove.online</code> 能有响应</li>
-        <li>防火墙 / VPN / 代理是否挡了 WebSocket (CodeLight 走 Socket.io)</li>
+        <li>URL 必须 <code>https://</code> 开头,浏览器能打开 <code>https://code.7ove.online</code></li>
+        <li>防火墙 / VPN / 代理是否挡了 WebSocket (走 Socket.io)</li>
+        <li>Mio Island 版本太老 → 升到 v2.1.9+</li>
+        <li>等几分钟服务器自恢复</li>
       </ul>
     </details>
 
     <details>
-      <summary>二维码出不来, 只显示转圈</summary>
-      <p>说明服务器连接没成功。通常:</p>
+      <summary>配对成功了,但状态不同步</summary>
+      <p>先看 <strong>系统设置 → cmux 连接</strong> 标签四项诊断 (Step 5 那张图),红的点对应"修复"按钮:</p>
       <ul>
-        <li>服务器暂时不可达 — 等几分钟或浏览器试一下</li>
-        <li>DNS / 代理问题</li>
-        <li>Mio Island 版本太老 — 升级到 v2.1.9+</li>
+        <li><strong>辅助功能权限</strong> / <strong>自动化权限</strong> 红 → 修复按钮跳到系统授权页打勾</li>
+        <li><strong>cmux 命令行</strong> 没找到 → 装 cmux 或检查 PATH</li>
+        <li><strong>Claude 会话数</strong> = 0 → hook 没装,检查 <code>~/.claude/hooks/codeisland-state.py</code> 和 <code>~/.claude/settings.json</code> 的 hooks 字段,然后重启 Claude Code 会话</li>
       </ul>
     </details>
 
     <details>
-      <summary>iPhone 配对成功了, 但状态不同步</summary>
-      <p>99% 是 hook 没装:</p>
-      <ul>
-        <li>系统设置 → 通用 → 钩子开关打开</li>
-        <li>文件检查: <code>ls ~/.claude/hooks/codeisland-state.py</code></li>
-        <li>Claude Code 配置: <code>~/.claude/settings.json</code> 里 <code>hooks</code> 字段应该多个事件指向 <code>codeisland-state.py</code></li>
-        <li>重启 Claude Code 会话 (老会话的 hook 是启动时加载的)</li>
-      </ul>
+      <summary>一台 Mac 能配几台 iPhone? 反过来呢?</summary>
+      <p>多对多。同一 6 位码可以配多台 iPhone (办公 + 私人机),同一台 iPhone 可以连多台 Mac 切换。付费账户服务器侧最多 3 台并发。</p>
     </details>
 
     <details>
-      <summary>一台 Mac 能配几台 iPhone? 一台 iPhone 能配几台 Mac?</summary>
-      <p>多对多:</p>
+      <summary>想完全停用 Mio Island 的钩子 (卸载状态同步)</summary>
+      <p>系统设置 → 通用 → 钩子关掉。会自动:</p>
       <ul>
-        <li>同一个 6 位配对码可以被多台 iPhone 扫 (办公 + 私人机)</li>
-        <li>同一台 iPhone 可以连多台 Mac, 在 CodeLight 里切换</li>
-        <li>官方服务器同时在线设备数: 付费账户最多 3 台并发</li>
+        <li>从 <code>~/.claude/settings.json</code> 删 Mio Island 的 hook 入口 (其他工具的 hook 不动)</li>
+        <li>删 <code>~/.claude/hooks/codeisland-state.py</code></li>
       </ul>
-    </details>
-
-    <details>
-      <summary>试用期过了, 怎么办?</summary>
-      <p>两条路:</p>
-      <ul>
-        <li>App 内 <strong>$13.99 买断</strong> — 永久解锁, 同一 Apple ID 最多 3 台设备并发, 支持恢复购买</li>
-        <li>参与 <strong>"发一条, 免费用"</strong> 活动换 <strong>30 天兑换码</strong> — 公开平台发一条关于 MioIsland/Code Light 的内容, 截图私信开发者, 审核通过即发码. 持续发一直免费</li>
-      </ul>
-    </details>
-
-    <details>
-      <summary>想完全停用 Mio Island 的钩子</summary>
-      <p>系统设置 → 通用 → 钩子关掉. 它会:</p>
-      <ul>
-        <li>从 <code>~/.claude/settings.json</code> 删除 Mio Island 的 hook 入口 (其他工具的 hook 不动)</li>
-        <li>删除 <code>~/.claude/hooks/codeisland-state.py</code></li>
-        <li>刘海仍能用, 状态同步停止 (显示最后一次快照)</li>
-      </ul>
+      <p>刘海仍能用,只是 iPhone 端状态不再更新。</p>
     </details>
   </section>
 

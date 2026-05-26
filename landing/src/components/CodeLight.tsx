@@ -74,17 +74,41 @@ export default function CodeLight() {
           </div>
         </div>
 
-        {/* Showcase - tilted screenshots */}
+        {/* v12 hero — iPhone Live Activity, the visual centerpiece of Code Light.
+            Placed above the showcase tiles so the section opens with one strong
+            real-life proof shot, then drills into individual feature tiles. */}
+        <div
+          className="mb-12 sm:mb-16 max-w-md mx-auto"
+          style={{ animation: 'heroEnter 0.8s ease-out 0.05s both' }}
+        >
+          <picture>
+            <source srcSet={`${base}v12/01-island-macro.webp`} type="image/webp" />
+            <img
+              src={`${base}v12/01-island-macro.jpg`}
+              alt={t("codelight.hero.alt")}
+              loading="lazy"
+              decoding="async"
+              className="block w-full h-auto rounded-3xl shadow-[0_20px_80px_-20px_rgba(52,211,153,0.25)]"
+              style={{ aspectRatio: '2 / 3', background: 'var(--color-deep, #0a0b0d)' }}
+            />
+          </picture>
+          <p className="text-center text-sm text-text-muted mt-4 italic">
+            {t("codelight.hero.caption")}
+          </p>
+        </div>
+
+        {/* Showcase - tilted screenshots (v12 4:3 pre-cropped variants) */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 mb-16 max-w-3xl mx-auto" style={{ animation: 'heroEnter 0.8s ease-out 0.1s both' }}>
           {[
-            { src: `${base}codelight/lockscreen-dynamic.png`, label: t("codelight.showcase.lockscreen") },
-            { src: `${base}codelight/chat-workflow.png`, label: t("codelight.showcase.workflow") },
-            { src: `${base}codelight/appstore-pairing.png`, label: t("codelight.showcase.appstore") },
+            { src: `${base}v12/01-island-macro-card.jpg`, webp: `${base}v12/01-island-macro-card.webp`, label: t("codelight.showcase.lockscreen"), alt: t("v12.01.alt") },
+            { src: `${base}v12/02-flatlay-desk.jpg`, webp: `${base}v12/02-flatlay-desk.webp`, label: t("codelight.showcase.workflow"), alt: t("v12.02.alt") },
+            { src: `${base}v12/03-pairing-card.jpg`, webp: `${base}v12/03-pairing-card.webp`, label: t("codelight.showcase.appstore"), alt: t("v12.03.alt") },
           ].map((img, i) => (
             <TiltedCard
               key={i}
               imageSrc={img.src}
-              altText={img.label}
+              imageWebpSrc={img.webp}
+              altText={img.alt}
               captionText={img.label}
               containerHeight="300px"
               containerWidth="100%"

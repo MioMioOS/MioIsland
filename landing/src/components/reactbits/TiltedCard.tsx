@@ -4,6 +4,8 @@ import { motion, useMotionValue, useSpring } from 'motion/react';
 
 interface TiltedCardProps {
   imageSrc: React.ComponentProps<'img'>['src'];
+  /** Optional WebP source for `<picture>`-style fallback. JPG `imageSrc` is the safe fallback. */
+  imageWebpSrc?: string;
   altText?: string;
   captionText?: string;
   containerHeight?: React.CSSProperties['height'];
@@ -26,6 +28,7 @@ const springValues: SpringOptions = {
 
 export default function TiltedCard({
   imageSrc,
+  imageWebpSrc,
   altText = 'Tilted card image',
   captionText = '',
   containerHeight = '300px',
@@ -116,15 +119,34 @@ export default function TiltedCard({
           scale
         }}
       >
-        <motion.img
-          src={imageSrc}
-          alt={altText}
-          className="absolute top-0 left-0 object-cover rounded-[15px] will-change-transform [transform:translateZ(0)]"
-          style={{
-            width: imageWidth,
-            height: imageHeight
-          }}
-        />
+        {imageWebpSrc ? (
+          <picture>
+            <source srcSet={imageWebpSrc} type="image/webp" />
+            <motion.img
+              src={imageSrc}
+              alt={altText}
+              loading="lazy"
+              decoding="async"
+              className="absolute top-0 left-0 object-cover rounded-[15px] will-change-transform [transform:translateZ(0)]"
+              style={{
+                width: imageWidth,
+                height: imageHeight
+              }}
+            />
+          </picture>
+        ) : (
+          <motion.img
+            src={imageSrc}
+            alt={altText}
+            loading="lazy"
+            decoding="async"
+            className="absolute top-0 left-0 object-cover rounded-[15px] will-change-transform [transform:translateZ(0)]"
+            style={{
+              width: imageWidth,
+              height: imageHeight
+            }}
+          />
+        )}
 
         {displayOverlayContent && overlayContent && (
           <motion.div className="absolute top-0 left-0 z-[2] will-change-transform [transform:translateZ(30px)]">
