@@ -197,24 +197,113 @@ cat > "$APPCAST_PATH" << APPCAST_EOF
 APPCAST_EOF
 echo "    Appcast: $APPCAST_PATH"
 
-# 9. Deploy appcast.xml to landing-page branch (GitHub Pages)
+# Order matters from here. Sparkle clients poll appcast.xml every few hours; if
+# appcast advertises $VERSION before the DMG is uploaded to GitHub Releases,
+# every poller in that window hits a 404 on the download URL. v3.0.1 burned on
+# a related issue (step 9's stash + checkout silently aborted, skipping the
+# tag) so the new order is:
+#   9.  commit pbxproj + tag main
+#   10. push main + tags
+#   11. gh release create (upload DMG + ZIP) — DMG is live on GitHub
+#   12. push appcast to landing-page — Sparkle can now resolve the URL
+# The race window from appcast-published to DMG-uploaded is now closed.
+
+GH_BIN="$(command -v gh || true)"
+if [ -z "$GH_BIN" ]; then
+  echo "ERROR: gh CLI not found. Install it with: brew install gh"
+  echo "       (release.sh now uploads the GitHub release directly to close"
+  echo "        the Sparkle 'appcast advertises before DMG exists' race window.)"
+  exit 1
+fi
+
+# 9. Commit version bump and tag
+echo ">>> Tagging $VERSION on $(git branch --show-current)..."
+git add "$PROJECT_DIR/ClaudeIsland.xcodeproj/project.pbxproj"
+# --allow-empty is intentional: re-running release.sh on the same version
+# (e.g., after a network blip in step 11) should not abort here.
+git commit -m "$VERSION: Release" --allow-empty
+if git rev-parse "$VERSION" >/dev/null 2>&1; then
+  echo "    (tag $VERSION already exists — reusing)"
+else
+  git tag "$VERSION"
+fi
+
+# 10. Push main + tags
+echo ">>> Pushing $(git branch --show-current) + tags..."
+git push origin HEAD
+git push origin "$VERSION"
+
+# 11. Create GitHub release with DMG + ZIP (DMG must exist before appcast goes live)
+echo ">>> Creating GitHub release with DMG + ZIP..."
+if gh release view "$VERSION" >/dev/null 2>&1; then
+  echo "    (release $VERSION already exists — uploading assets idempotently)"
+  gh release upload "$VERSION" "$DMG_PATH" "$ZIP_PATH" --clobber
+else
+  # --draft lets the user write release notes in the GitHub UI before
+  # publishing. v3.0.1 deliberately omitted some commits from notes per
+  # user choice — auto-generated notes would defeat that.
+  gh release create "$VERSION" "$DMG_PATH" "$ZIP_PATH" \
+    --title "$VERSION — Mio Island" \
+    --draft \
+    --notes "Auto-created by release.sh. Edit these notes and publish from the GitHub UI."
+fi
+
+# 12. Deploy appcast.xml to landing-page (race window closed: DMG is now on GitHub)
 echo ">>> Deploying appcast.xml to landing-page..."
-CURRENT_BRANCH=$(git branch --show-current)
-git stash --quiet 2>/dev/null || true
-git checkout landing-page --quiet 2>/dev/null
+
+ORIGINAL_BRANCH=$(git branch --show-current)
+STASH_MSG="release-sh-tmp-$VERSION-$$"
+RELEASE_STASHED=0
+
+# Defensive cleanup: if any step below fails (or set -e fires), get the user
+# back to their original branch and restore the stash. v3.0.1 release burned
+# here: stash was missing --include-untracked, landing/.vite/ blocked the
+# checkout, the error was swallowed by 2>/dev/null, and the script silently
+# died leaving step 10 (tag) unrun.
+restore_state() {
+  local cur
+  cur=$(git branch --show-current 2>/dev/null || echo "")
+  if [ -n "$ORIGINAL_BRANCH" ] && [ "$cur" != "$ORIGINAL_BRANCH" ]; then
+    git checkout "$ORIGINAL_BRANCH" 2>/dev/null || \
+      echo "    WARN: failed to return to $ORIGINAL_BRANCH (current: $cur)"
+  fi
+  if [ "$RELEASE_STASHED" -eq 1 ]; then
+    local stash_ref
+    stash_ref=$(git stash list 2>/dev/null | grep -F "$STASH_MSG" | head -1 | cut -d: -f1)
+    if [ -n "$stash_ref" ]; then
+      git stash pop "$stash_ref" 2>/dev/null || \
+        echo "    WARN: failed to pop stash $stash_ref ($STASH_MSG) — recover manually"
+    fi
+    RELEASE_STASHED=0
+  fi
+}
+trap restore_state EXIT
+
+# Stash everything (including untracked + ignored) so checkout cannot fail
+# on dirty working tree. --include-untracked alone misses .gitignored files,
+# but landing-page's .gitignore may differ from main's, so use --all.
+if ! git diff --quiet || \
+   ! git diff --cached --quiet || \
+   [ -n "$(git ls-files --others --exclude-standard)" ]; then
+  git stash push --include-untracked --message "$STASH_MSG"
+  RELEASE_STASHED=1
+fi
+
+git checkout landing-page
 cp "$APPCAST_PATH" "$PROJECT_DIR/landing/public/appcast.xml"
 git add "$PROJECT_DIR/landing/public/appcast.xml"
-git commit -m "chore: update appcast.xml for $VERSION" --quiet || true
-git push origin landing-page --quiet 2>/dev/null || echo "    (push landing-page manually: git push origin landing-page)"
-git checkout "$CURRENT_BRANCH" --quiet 2>/dev/null
-git stash pop --quiet 2>/dev/null || true
-echo "    Deployed to landing/public/appcast.xml"
+if ! git diff --cached --quiet; then
+  git commit -m "chore: update appcast.xml for $VERSION"
+  git push origin landing-page
+  echo "    Pushed appcast.xml to landing-page"
+else
+  echo "    (no appcast changes — already up to date on landing-page)"
+fi
 
-# 10. Commit version bump and tag
-echo ">>> Tagging $VERSION..."
-git add "$PROJECT_DIR/ClaudeIsland.xcodeproj/project.pbxproj"
-git commit -m "$VERSION: Release" --allow-empty || true
-git tag "$VERSION"
+# Explicitly run cleanup now and disarm the trap so a clean exit doesn't
+# re-trigger it.
+restore_state
+trap - EXIT
 
 echo ""
 echo "=== Done! ==="
@@ -222,6 +311,6 @@ echo "DMG:     $DMG_PATH"
 echo "ZIP:     $ZIP_PATH"
 echo "Appcast: $APPCAST_PATH (deployed to GitHub Pages)"
 echo ""
-echo "Next steps:"
-echo "  git push origin main --tags"
-echo "  gh release create $VERSION \"$DMG_PATH\" \"$ZIP_PATH\" --title \"$VERSION — Mio Island\""
+echo "Release is in DRAFT state. Publish via:"
+echo "  gh release view $VERSION --web"
+echo "  (or: gh release edit $VERSION --draft=false  once notes are written)"
