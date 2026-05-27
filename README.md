@@ -1,224 +1,205 @@
 <div align="center">
 
-<img src="ClaudeIsland/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" width="128" height="128" alt="CodeIsland" />
+<img src="marketing/readme/01-mioisland.png" width="900" alt="MioIsland — macOS notch utility for Claude Code · Status colors, 18 Buddies, Pixel Cat, 8-bit Sound, Permission Diff"/>
 
-# CodeIsland
+# MioIsland
 
 **Your AI agents live in the notch.**
 
-This is a passion project built purely out of personal interest. It is **free and open-source** with no commercial intentions whatsoever. I welcome everyone to try it out, report bugs, share it with your colleagues, and contribute code. Let's build something great together!
+[![GitHub stars](https://img.shields.io/github/stars/MioMioOS/MioIsland?style=social)](https://github.com/MioMioOS/MioIsland/stargazers)
 
-这是一个纯粹出于个人兴趣开发的项目，**完全免费开源**，没有任何商业目的。欢迎大家试用、提 Bug、推荐给身边的同事使用，也欢迎贡献代码。一起把它做得更好！
+[![Website](https://img.shields.io/badge/website-MioMioOS.github.io%2FMioIsland-D6FD62?style=flat-square)](https://MioMioOS.github.io/MioIsland/)
+[![Release](https://img.shields.io/github/v/release/MioMioOS/MioIsland?style=flat-square&color=4ADE80)](https://github.com/MioMioOS/MioIsland/releases)
+[![macOS](https://img.shields.io/badge/macOS-15%2B-black?style=flat-square&logo=apple)](https://github.com/MioMioOS/MioIsland/releases)
+[![License](https://img.shields.io/badge/license-CC%20BY--NC%204.0-green?style=flat-square)](LICENSE.md)
 
 English | [中文](README.zh-CN.md)
 
-[![GitHub stars](https://img.shields.io/github/stars/xmqywx/CodeIsland?style=social)](https://github.com/xmqywx/CodeIsland/stargazers)
+A free, open-source passion project — no commercial intent, just trying to make Claude Code work better.
 
-[![Website](https://img.shields.io/badge/website-xmqywx.github.io%2FCodeIsland-7c3aed?style=flat-square)](https://xmqywx.github.io/CodeIsland/)
-[![Release](https://img.shields.io/github/v/release/xmqywx/CodeIsland?style=flat-square&color=4ADE80)](https://github.com/xmqywx/CodeIsland/releases)
-[![macOS](https://img.shields.io/badge/macOS-14%2B-black?style=flat-square&logo=apple)](https://github.com/xmqywx/CodeIsland/releases)
-[![License](https://img.shields.io/badge/license-CC%20BY--NC%204.0-green?style=flat-square)](LICENSE.md)
-
-**If you find this useful, please give it a star! It keeps us motivated to improve.**
-
-**如果觉得好用，请点个 Star 支持一下！这是我们持续更新的最大动力。**
+**If you find this useful, please give it a star ⭐ — it keeps us motivated to improve.**
 
 </div>
 
 ---
 
-A native macOS app that turns your MacBook's notch into a real-time control surface for AI coding agents. Monitor sessions, approve permissions, jump to terminals, and hang out with your Claude Code buddy — all without leaving your flow.
+## 🐱 What is MioIsland?
 
-## Features
+A **macOS notch utility** that turns your MacBook's camera notch into a **live Claude Code dashboard**. See what your AI agent is doing — status, project, active session count, even the buddy that comes with the session — right in your notch. Never tab back to check on Claude again.
 
-### Dynamic Island Notch
+The figure above shows everything that lives in the notch: six status colors, the session list, eighteen pixel buddies, six cat expressions, eight chiptune sounds, and in-notch permission approval with a diff preview.
 
-The collapsed notch shows everything at a glance:
+---
 
-- **Animated buddy** — your Claude Code `/buddy` pet rendered as 16x16 pixel art with wave/dissolve/reassemble animation
-- **Status dot** — color indicates state:
-  - 🟦 Cyan = working
-  - 🟧 Amber = needs approval
-  - 🟩 Green = done / waiting for input
-  - 🟣 Purple = thinking
-  - 🔴 Red = error, or session unattended >60s
-  - 🟠 Orange = session unattended >30s
-- **Project name + status** — carousel rotates task title, tool action, project name
-- **Session count** — `×3` badge showing active sessions
-- **Pixel Cat Mode** — toggle to show the hand-drawn pixel cat instead of your buddy
+## 📱 Code Light — your iPhone companion
 
-### Session List
+<div align="center">
 
-Expand the notch to see all your Claude Code sessions:
+<img src="marketing/readme/02-codelight.png" width="900" alt="Code Light — iPhone companion · Mac × iPhone Sync, 5 core features, 11 terminals, Plugin Marketplace, Install"/>
 
-- **Pixel cat face** per session with state-specific expressions (blink, eye-dart, heart eyes on done, X eyes on error)
-- **Auto-detected terminal** — shows Ghostty, Warp, iTerm2, cmux, Terminal, VS Code, Cursor, etc.
-- **Task title** — displays your first message or Claude's summary, not just the folder name
-- **Duration badge** — how long each session has been running
-- **Golden jump button** — click to jump to the exact terminal tab (via cmux/Ghostty AppleScript)
-- **Glow dots** with gradient dividers — minimal, clean design
-- **Hover effects** — row highlight + golden terminal icon
+[![Download on the App Store](https://img.shields.io/badge/Download_on_the-App_Store-0D96F6?style=for-the-badge&logo=appstore&logoColor=white)](https://apps.apple.com/us/app/code-light/id6761744871)
 
-### Claude Code Buddy Integration
+> Available in 147 countries · China mainland pending ICP filing
 
-Full integration with Claude Code's `/buddy` companion system:
+</div>
 
-- **Accurate stats** — species, rarity, eye style, hat, shiny status, and all 5 stats (DEBUGGING, PATIENCE, CHAOS, WISDOM, SNARK) computed using the exact same Bun.hash + Mulberry32 algorithm as Claude Code
-- **Dynamic salt detection** — reads the actual salt from your Claude Code binary, supports patched installs (any-buddy compatible)
-- **ASCII art sprite** — all 18 buddy species rendered as animated ASCII art with idle animation sequence (blink, fidget), matching Claude Code's terminal display
-- **Buddy card** — left-right layout: ASCII sprite + name on the left, ASCII stat bars `[████████░░]` + personality on the right
-- **Rarity stars** — ★ Common to ★★★★★ Legendary with color coding
-- **18 species supported** — duck, goose, blob, cat, dragon, octopus, owl, penguin, turtle, snail, ghost, axolotl, capybara, cactus, robot, rabbit, mushroom, chonk
+> *Claude is thinking. You're at lunch. **You'll know.***
 
-### Permission Approval
+The same pixel cat that lives in your MacBook notch now lives in your iPhone's **Dynamic Island**. Real-time session phase, latest user message, Claude's reply preview — right on your lock screen.
 
-Approve or deny Claude Code's permission requests right from the notch:
+The figure above shows: Mac × iPhone bidirectional sync (real-time status, slash-command round-trip, remote launch), five core features, eleven supported terminals, the Plugin Marketplace at [miomio.chat/plugins](https://miomio.chat/plugins), and the install command.
 
-- **Code diff preview** — see exactly what will change before allowing (green/red line highlighting)
-- **File path display** — warning icon + tool name + file being modified
-- **Deny/Allow buttons** — with keyboard hint labels
-- **Hook-based protocol** — responses sent via Unix socket, no terminal switching needed
+<details>
+<summary><b>Code Light Sync — Technical Details (click to expand)</b></summary>
 
-### Pixel Cat Companion
+MioIsland's **sync module** is the bridge that makes the [Code Light](https://github.com/MioMioOS/CodeLight) iPhone companion possible. Open `Pair iPhone` from the notch menu to begin.
 
-A hand-drawn pixel cat with 6 animated states:
+#### Pairing
 
-| State | Expression |
-|-------|-----------|
-| Idle | Black eyes, gentle blink every 90 frames |
-| Working | Eyes dart left/center/right (reading code) |
-| Needs You | Eyes + right ear twitches |
-| Thinking | Closed eyes, breathing nose |
-| Error | Red X eyes |
-| Done | Green heart eyes + green tint overlay |
+Each Mac is identified by a **permanent 6-character `shortCode`** (lazy-allocated on first connect, never rotates). The pairing window shows both a QR code (scan with the iPhone) and the 6-character code (type it in). Both converge on `POST /v1/pairing/code/redeem`. Same code, unlimited iPhone pairs, never expires.
 
-### 8-bit Sound System
+#### Phone → terminal routing
 
-Chiptune alerts for every event:
+Phone messages have to land in the **exact** Claude Code terminal that the user picked. MioIsland's `TerminalWriter` does this with zero guessing:
 
-| Event | Default |
-|-------|---------|
-| Session start | ON |
-| Processing begins | OFF |
-| Needs approval | ON |
-| Approval granted | ON |
-| Approval denied | ON |
-| Session complete | ON |
-| Error | ON |
-| Context compacting | OFF |
+1. `ps -Ax` to find the `claude --session-id <UUID>` process matching the message's session tag
+2. `ps -E -p <pid>` to read `CMUX_WORKSPACE_ID` and `CMUX_SURFACE_ID` env vars
+3. `cmux send --workspace <ws> --surface <surf> -- <text>`
 
-Each sound can be toggled individually. Global mute and volume control available.
+If the live Claude PID was rotated by a `claude --resume`, a `cwd`-scoped fallback picks the highest-PID cmux-hosted Claude in the same directory. For non-cmux terminals, falls back to AppleScript.
 
-### Project Grouping
+#### Slash commands with captured output
 
-Toggle between flat list and project-grouped view:
+`/model`, `/cost`, `/usage`, `/clear`, `/compact` don't write to Claude's JSONL. MioIsland intercepts these:
 
-- Sessions automatically grouped by working directory
-- Collapsible project headers with active count
-- Chevron icons for expand/collapse
+1. Snapshot the cmux pane via `cmux capture-pane`
+2. Inject the slash command via `cmux send`
+3. Poll the pane every 200 ms until output settles
+4. Diff the snapshots and ship the new lines back as a synthetic `terminal_output` message
 
-## Settings
+#### Remote session launch
 
-| Setting | Description |
-|---------|-------------|
-| **Screen** | Choose which display shows the notch (Auto, Built-in, or specific monitor) |
-| **Notification Sound** | Select alert sound style |
-| **Group by Project** | Toggle between flat list and project-grouped sessions |
-| **Pixel Cat Mode** | Switch notch icon between pixel cat and buddy emoji animation |
-| **Language** | Auto (system) / English / 中文 |
-| **Launch at Login** | Start CodeIsland automatically when you log in |
-| **Hooks** | Install/uninstall Claude Code hooks in `~/.claude/settings.json` |
-| **Accessibility** | Grant accessibility permission for terminal window focusing |
-
-## Terminal Support
-
-CodeIsland auto-detects your terminal from the process tree:
-
-| Terminal | Detection | Jump-to-Tab |
-|----------|-----------|-------------|
-| cmux | Auto | AppleScript (by working directory) |
-| Ghostty | Auto | AppleScript (by working directory) |
-| Warp | Auto | Activate only (no tab API) |
-| iTerm2 | Auto | AppleScript |
-| Terminal.app | Auto | Activate |
-| Alacritty | Auto | Activate |
-| Kitty | Auto | Activate |
-| WezTerm | Auto | Activate |
-| VS Code | Auto | Activate |
-| Cursor | Auto | Activate |
-| Zed | Auto | Activate |
-
-> **Recommended: [cmux](https://cmux.io)** — A modern terminal multiplexer built on Ghostty. CodeIsland works best with cmux: precise workspace-level jumping, AskUserQuestion quick reply via `cmux send`, and smart popup suppression per workspace tab. If you manage multiple Claude Code sessions, cmux + CodeIsland is the ideal combo.
->
-> **推荐搭配 [cmux](https://cmux.io)** — 基于 Ghostty 的现代终端复用器。CodeIsland 与 cmux 配合最佳：精确到 workspace 级别的跳转、AskUserQuestion 快捷回复、智能弹出抑制。多 Claude Code 会话管理的理想组合。
-
-## Install
-
-**Download** the latest `.dmg` from [Releases](https://github.com/xmqywx/CodeIsland/releases), open it, drag to Applications.
-
-> **macOS Gatekeeper warning:** If you see "Code Island is damaged and can't be opened", run this in Terminal:
-> ```bash
-> sudo xattr -rd com.apple.quarantine /Applications/Code\ Island.app
-> ```
-
-### Build from Source
+The phone can ask MioIsland to spawn a new cmux workspace running a configured command:
 
 ```bash
-git clone https://github.com/xmqywx/CodeIsland.git
-cd CodeIsland
+cmux new-workspace --cwd <projectPath> --command "<preset.command>"
+```
+
+Default presets: `Claude (skip perms)`, `Claude + Chrome`.
+
+#### Other features (briefly)
+
+- **Image attachments** — Phone images come down as blob IDs, paste into the cmux pane via `NSPasteboard` + `Cmd+V` (requires Accessibility permission).
+- **Project path sync** — `cwd` of every active session uploads every 5 min for the phone's "Recent Projects" picker.
+- **Echo loop dedup** — 60s TTL `(claudeUuid, text)` ring prevents duplicate messages when phone-injected text echoes back through the JSONL watcher.
+- **Multi-iPhone, multi-server** — One Mac pairs with N iPhones (same `shortCode`); one iPhone pairs with M Macs across different servers (per-Mac `serverUrl` switching).
+
+</details>
+
+> ⭐ **[Star MioIsland](https://github.com/MioMioOS/MioIsland)** + ⭐ **[Star Code Light](https://github.com/MioMioOS/CodeLight)** to stay updated.
+
+---
+
+## 📦 Install
+
+### Homebrew (recommended)
+
+```bash
+brew install xmqywx/codeisland/codeisland
+```
+
+The cask handles Gatekeeper automatically — launch with a normal double-click right after install.
+
+### Manual download
+
+Grab the latest `.zip` from [Releases](https://github.com/MioMioOS/MioIsland/releases), unzip, drag `Mio Island.app` to `/Applications`.
+
+MioIsland ships **unsigned**, so macOS Gatekeeper will block the first launch. Do **one** of:
+- **Right-click** `Mio Island.app` → **Open** → click **Open** in the dialog
+- Or run once in Terminal: `xattr -dr com.apple.quarantine "/Applications/Mio Island.app"`
+
+### Requirements
+
+- macOS 15+ (Sequoia) — universal binary (Apple Silicon + Intel)
+- MacBook with notch (floating mode available on external displays)
+
+### HTTP Proxy (for network-restricted regions)
+
+`Settings → General → Anthropic API Proxy` routes MioIsland's Anthropic API traffic through a local HTTP proxy (e.g. `http://127.0.0.1:7890`). Useful with Clash / V2Ray.
+
+**Applied to:** Notch rate-limit bar + **every subprocess MioIsland spawns** (Stats plugin's `claude` CLI, etc).
+**Not applied to:** Code Light iPhone sync (`island.wdao.chat`), third-party plugins using their own `URLSession`.
+
+Leave empty for direct connections.
+
+<details>
+<summary><b>Build from Source</b></summary>
+
+```bash
+git clone https://github.com/MioMioOS/MioIsland.git
+cd MioIsland
 xcodebuild -project ClaudeIsland.xcodeproj -scheme ClaudeIsland \
   -configuration Release CODE_SIGN_IDENTITY="-" \
   CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
   DEVELOPMENT_TEAM="" build
 ```
 
-### Requirements
+</details>
 
-- macOS 14+ (Sonoma)
-- MacBook with notch (floating mode on external displays)
-- [Bun](https://bun.sh) for accurate buddy stats (optional, falls back to basic info)
+---
 
-## How It Works
+## ⚙️ Settings
 
-1. **Zero config** — on first launch, CodeIsland installs hooks into `~/.claude/settings.json`
-2. **Hook events** — a Python script (`codeisland-state.py`) sends session state to the app via Unix socket (`/tmp/codeisland.sock`)
-3. **Permission approval** — for `PermissionRequest` events, the socket stays open until you click Allow/Deny, then sends the decision back to Claude Code
+| Setting | Description |
+|---|---|
+| **Screen** | Choose which display shows the notch (Auto / Built-in / specific monitor) |
+| **Notification Sound** | Select alert sound style |
+| **Group by Project** | Flat list vs project-grouped sessions |
+| **Pixel Cat Mode** | Pixel cat vs buddy emoji animation |
+| **Language** | Auto (system) / English / 中文 |
+| **Launch at Login** | Start MioIsland automatically |
+| **Hooks** | Install/uninstall Claude Code hooks in `~/.claude/settings.json` |
+| **Accessibility** | Grant accessibility permission for terminal focus + image-paste keystrokes |
+| **Pair iPhone** | QR + 6-character pairing code for Code Light |
+| **Launch Presets** | Manage cmux launch commands the iPhone can trigger remotely |
+
+---
+
+## 🔧 How It Works
+
+1. **Zero config** — on first launch, MioIsland installs hooks into `~/.claude/settings.json`
+2. **Hook events** — a Python script (`codeisland-state.py`) sends session state via Unix socket (`/tmp/codeisland.sock`)
+3. **Permission approval** — for `PermissionRequest` events, socket stays open until you click Allow/Deny, then sends decision back to Claude Code
 4. **Buddy data** — reads `~/.claude.json` for name/personality, runs `buddy-bones.js` with Bun for accurate species/rarity/stats
-5. **Terminal jump** — uses AppleScript to find and focus the correct terminal tab by matching working directory
+5. **Terminal jump** — AppleScript finds and focuses the correct terminal tab by matching working directory
 
-## i18n
+---
 
-CodeIsland supports English and Chinese with automatic system locale detection. Override in Settings > Language.
+## 🌍 i18n
 
-## Contributing
+English + 中文 with automatic system locale detection. Override in Settings → Language.
 
-Contributions are welcome! Here's how:
+---
 
-1. **Report bugs** — [Open an issue](https://github.com/xmqywx/CodeIsland/issues) with steps to reproduce
-2. **Submit a PR** — Fork the repo, create a branch, make your changes, and open a Pull Request
-3. **Suggest features** — Open an issue tagged `enhancement`
+## 🤝 Contributing
 
-I will personally review and merge all PRs. Please keep changes focused and include a clear description.
+Contributions welcome! I will personally review and merge all PRs.
 
-## 参与贡献
+1. **Bug?** [Open an issue](https://github.com/MioMioOS/MioIsland/issues) with steps to reproduce
+2. **PR?** Fork → branch → make changes → open a PR
+3. **Feature request?** Open an issue tagged `enhancement`
 
-欢迎参与！方式如下：
+---
 
-1. **提交 Bug** — 在 [Issues](https://github.com/xmqywx/CodeIsland/issues) 中描述问题和复现步骤
-2. **提交 PR** — Fork 本仓库，新建分支，修改后提交 Pull Request
-3. **建议功能** — 在 Issues 中提出，标记为 `enhancement`
-
-我会亲自 Review 并合并所有 PR。请保持改动聚焦，附上清晰的说明。
-
-## Contact / 联系方式
+## 📬 Contact
 
 Have questions or want to chat? Reach out!
 
-有问题或想交流？欢迎联系！
+- **Email**: xmqywx@gmail.com
 
-- **Email / 邮箱**: xmqywx@gmail.com
+<img src="docs/wechat-qr-kris.jpg" width="180" alt="WeChat - Kris" />  <img src="docs/wechat-qr.jpg" width="180" alt="WeChat - Carey" />  <img src="docs/wechat-group-qr.jpg" width="180" alt="MioIsland 用户群" />
 
-<img src="docs/wechat-qr-kris.jpg" width="180" alt="WeChat - Kris" />  <img src="docs/wechat-qr.jpg" width="180" alt="WeChat - Carey" />
+---
 
 ## Credits
 
@@ -226,7 +207,7 @@ Forked from [Claude Island](https://github.com/farouqaldori/claude-island) by fa
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=xmqywx/CodeIsland&type=Date)](https://star-history.com/#xmqywx/CodeIsland&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=MioMioOS/MioIsland&type=Date)](https://star-history.com/#MioMioOS/MioIsland&Date)
 
 ## License
 

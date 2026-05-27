@@ -53,3 +53,16 @@ CodeIsland-v*.zip
 
 # Node
 package-lock.json
+
+# Local release binary copies (releases live in GitHub Releases, not in repo)
+MioIsland-v*.dmg
+MioIsland-v*.zip
+*.dmg
+*.zip
+
+# README backup
+README.md.bak
+
+# Marketing design drafts (only marketing/readme/ is shipped, referenced from README.md)
+marketing/readme-creative*/
+marketing/readme-qr-template/
