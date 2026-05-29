@@ -32,6 +32,16 @@ struct NotchCustomization: Codable, Equatable {
     var showBuddy: Bool
     var showUsageBar: Bool
 
+    // Per-provider sub-toggles. Honored only when showUsageBar is true.
+    // Default both to true for backward compatibility with the pre-2026-05-28
+    // single-toggle behavior.
+    var showClaudeUsageBar: Bool = true
+    var showCodexUsageBar: Bool = true
+
+    // Usage bar display mode (auto by default — switches between compact
+    // and alert based on usage; user can pin a specific mode)
+    var usageBarDisplayMode: UsageBarDisplayMode = .auto
+
     // Per-screen geometry
     var screenGeometries: [String: ScreenGeometry] = [:]
     var defaultGeometry: ScreenGeometry = .init()
@@ -48,6 +58,9 @@ struct NotchCustomization: Codable, Equatable {
         buddyStyle: BuddyStyle = .pixelCat,
         showBuddy: Bool = true,
         showUsageBar: Bool = true,
+        showClaudeUsageBar: Bool = true,
+        showCodexUsageBar: Bool = true,
+        usageBarDisplayMode: UsageBarDisplayMode = .auto,
         hardwareNotchMode: HardwareNotchMode = .auto,
         hoverSpeed: HoverSpeed = .normal
     ) {
@@ -56,6 +69,9 @@ struct NotchCustomization: Codable, Equatable {
         self.buddyStyle = buddyStyle
         self.showBuddy = showBuddy
         self.showUsageBar = showUsageBar
+        self.showClaudeUsageBar = showClaudeUsageBar
+        self.showCodexUsageBar = showCodexUsageBar
+        self.usageBarDisplayMode = usageBarDisplayMode
         self.hardwareNotchMode = hardwareNotchMode
         self.hoverSpeed = hoverSpeed
     }
@@ -84,6 +100,8 @@ struct NotchCustomization: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case theme, fontScale, buddyStyle, showBuddy, showUsageBar,
+             showClaudeUsageBar, showCodexUsageBar,
+             usageBarDisplayMode,
              hardwareNotchMode, hoverSpeed, screenGeometries, defaultGeometry,
              maxWidth, horizontalOffset // legacy keys for migration
     }
@@ -107,6 +125,9 @@ struct NotchCustomization: Codable, Equatable {
         }
         self.showBuddy = try c.decodeIfPresent(Bool.self, forKey: .showBuddy) ?? true
         self.showUsageBar = try c.decodeIfPresent(Bool.self, forKey: .showUsageBar) ?? true
+        self.showClaudeUsageBar = try c.decodeIfPresent(Bool.self, forKey: .showClaudeUsageBar) ?? true
+        self.showCodexUsageBar = try c.decodeIfPresent(Bool.self, forKey: .showCodexUsageBar) ?? true
+        self.usageBarDisplayMode = (try? c.decode(UsageBarDisplayMode.self, forKey: .usageBarDisplayMode)) ?? .auto
         self.hardwareNotchMode = try c.decodeIfPresent(HardwareNotchMode.self, forKey: .hardwareNotchMode) ?? .auto
         self.hoverSpeed = try c.decodeIfPresent(HoverSpeed.self, forKey: .hoverSpeed) ?? .normal
         self.screenGeometries = try c.decodeIfPresent([String: ScreenGeometry].self, forKey: .screenGeometries) ?? [:]
@@ -135,6 +156,9 @@ struct NotchCustomization: Codable, Equatable {
         try c.encode(buddyStyle, forKey: .buddyStyle)
         try c.encode(showBuddy, forKey: .showBuddy)
         try c.encode(showUsageBar, forKey: .showUsageBar)
+        try c.encode(showClaudeUsageBar, forKey: .showClaudeUsageBar)
+        try c.encode(showCodexUsageBar, forKey: .showCodexUsageBar)
+        try c.encode(usageBarDisplayMode, forKey: .usageBarDisplayMode)
         try c.encode(hardwareNotchMode, forKey: .hardwareNotchMode)
         try c.encode(hoverSpeed, forKey: .hoverSpeed)
         try c.encode(screenGeometries, forKey: .screenGeometries)
@@ -216,6 +240,28 @@ enum FontScale: String, Codable, CaseIterable {
 enum HardwareNotchMode: String, Codable {
     case auto
     case forceVirtual
+}
+
+/// Display mode for the usage bar.
+///
+/// - `auto`: switches between `compact` and `alert` based on usage thresholds.
+///   < 60% → compact (minimal). 60-80% → alert (enlarged, attention-grabbing).
+///   > 80% → alert + pulsing red. This is the default and resolves the
+///   "I can't tell when usage is getting close to limit" UX problem
+///   automatically.
+/// - `alert`: always show the enlarged warning-oriented layout (bigger
+///   percentage numbers, thicker progress bar with glow).
+/// - `compact`: the legacy layout — small label + percentage + thin bar +
+///   reset time hint. Information-dense, low-attention.
+/// - `time`: emphasize remaining time before reset, with a small ring
+///   showing the percentage.
+enum UsageBarDisplayMode: String, Codable, CaseIterable, Identifiable {
+    case auto
+    case alert
+    case compact
+    case time
+
+    var id: String { rawValue }
 }
 
 /// How fast the notch expands when the mouse hovers over it.

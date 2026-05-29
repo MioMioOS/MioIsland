@@ -88,7 +88,8 @@ struct ClaudeInstancesView: View {
                             .buttonStyle(.plain)
                         }
 
-                        if notchStore.customization.showUsageBar {
+                        if notchStore.customization.showUsageBar
+                            && notchStore.customization.showClaudeUsageBar {
                             UsageStatsBar(monitor: rateLimitMonitor, totalMinutes: totalSessionMinutes)
                         }
                     }
@@ -100,7 +101,8 @@ struct ClaudeInstancesView: View {
 
                 // Bottom left: Codex usage stats
                 if codexGate.isEnabled && !showBuddyCard && !(sortedInstances.count > 4 && viewModel.isInstancesExpanded)
-                    && notchStore.customization.showUsageBar {
+                    && notchStore.customization.showUsageBar
+                    && notchStore.customization.showCodexUsageBar {
                     VStack(alignment: .leading, spacing: 4) {
                         Spacer()
                         CodexUsageStatsBar(monitor: codexUsageMonitor)
@@ -121,13 +123,23 @@ struct ClaudeInstancesView: View {
             // preference. Previously RateLimitMonitor.shared polled the API
             // unconditionally on init, so users who disabled the bar still
             // hit api.anthropic.com every 5 minutes. See issue #50.
+            // Also gate on the Claude sub-toggle so users who only want Codex
+            // shown don't pay the Claude API poll cost.
             .onAppear {
-                if notchStore.customization.showUsageBar {
+                if notchStore.customization.showUsageBar
+                    && notchStore.customization.showClaudeUsageBar {
                     rateLimitMonitor.start()
                 }
             }
             .onChange(of: notchStore.customization.showUsageBar) { _, newValue in
-                if newValue {
+                if newValue && notchStore.customization.showClaudeUsageBar {
+                    rateLimitMonitor.start()
+                } else {
+                    rateLimitMonitor.stop()
+                }
+            }
+            .onChange(of: notchStore.customization.showClaudeUsageBar) { _, newValue in
+                if newValue && notchStore.customization.showUsageBar {
                     rateLimitMonitor.start()
                 } else {
                     rateLimitMonitor.stop()
@@ -287,11 +299,13 @@ struct ClaudeInstancesView: View {
                     .padding(.horizontal, 20)
                     .multilineTextAlignment(.center)
 
-                // Usage stats if available (honors showUsageBar)
+                // Usage stats if available (honors showUsageBar + sub-toggles)
                 if notchStore.customization.showUsageBar {
-                    UsageStatsBar(monitor: rateLimitMonitor, totalMinutes: 0)
-                        .padding(.top, 4)
-                    if codexGate.isEnabled {
+                    if notchStore.customization.showClaudeUsageBar {
+                        UsageStatsBar(monitor: rateLimitMonitor, totalMinutes: 0)
+                            .padding(.top, 4)
+                    }
+                    if codexGate.isEnabled && notchStore.customization.showCodexUsageBar {
                         CodexUsageStatsBar(monitor: codexUsageMonitor)
                             .padding(.top, 4)
                     }
@@ -1482,13 +1496,23 @@ struct UsageStatsBar: View {
     @AppStorage("usageWarningThreshold") private var usageWarningThreshold: Int = 90
     @State private var appear = false
     @State private var pulsePhase = false
+    @State private var justRefreshed = false
 
-    private var fiveHourPct: CGFloat {
-        CGFloat(monitor.rateLimitInfo?.fiveHourPercent ?? 0) / 100.0
+    private var maxPercent: Int {
+        max(monitor.rateLimitInfo?.fiveHourPercent ?? 0,
+            monitor.rateLimitInfo?.sevenDayPercent ?? 0)
     }
 
-    private var sevenDayPct: CGFloat {
-        CGFloat(monitor.rateLimitInfo?.sevenDayPercent ?? 0) / 100.0
+    /// Resolve the user's display mode preference, with auto-switching.
+    /// `auto`: < 60% → compact, ≥ 60% → alert (pulses red ≥ 80%).
+    private var effectiveMode: UsageBarDisplayMode {
+        let pref = notchStore.customization.usageBarDisplayMode
+        guard pref == .auto else { return pref }
+        return maxPercent >= 60 ? .alert : .compact
+    }
+
+    private var shouldPulseFrame: Bool {
+        effectiveMode == .alert && maxPercent >= 80
     }
 
     private func barColor(_ pct: Int) -> Color {
@@ -1508,61 +1532,31 @@ struct UsageStatsBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 0) {
             if let info = monitor.rateLimitInfo {
-                // 5h gauge
-                usageGauge(
-                    pct: info.fiveHourPercent ?? 0,
-                    label: "5h",
-                    resetAt: info.fiveHourResetAt
-                )
-
-                // 7d gauge (if > 0)
-                if let sevenDay = info.sevenDayPercent, sevenDay > 0 {
-                    usageGauge(
-                        pct: sevenDay,
-                        label: "7d",
-                        resetAt: info.sevenDayResetAt
-                    )
-                }
-
-                // Divider
-                Rectangle()
-                    .fill(theme.usageBorder.opacity(0.8))
-                    .frame(width: 1, height: 14)
-
-                // Session time
-                if totalMinutes > 0 {
-                    Text(formatTime(totalMinutes))
-                        .notchFont(8, weight: .regular, design: .monospaced)
-                        .notchSecondaryForeground()
-                }
-
-                // Refresh
-                Image(systemName: "arrow.clockwise")
-                    .notchFont(7)
-                    .foregroundColor(theme.mutedText)
-                    .opacity(monitor.isLoading ? 0.5 : 0.2)
-                    .rotationEffect(.degrees(monitor.isLoading ? 360 : 0))
-                    .animation(monitor.isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: monitor.isLoading)
-                    .contentShape(Rectangle().size(width: 16, height: 16))
-                    .onTapGesture {
-                        Task { await monitor.refresh() }
+                Group {
+                    switch effectiveMode {
+                    case .auto, .compact: compactBody(info: info)
+                    case .alert: alertBody(info: info)
+                    case .time: timeBody(info: info)
                     }
+                }
+                refreshIndicator
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(theme.overlay.opacity(0.16))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(theme.usageBorder.opacity(0.7), lineWidth: 0.5)
-                )
-        )
+        .padding(.horizontal, effectiveMode == .alert ? 10 : 8)
+        .padding(.vertical, effectiveMode == .alert ? 5 : 4)
+        .background(barBackground)
         .opacity(appear ? 1 : 0)
         .offset(y: appear ? 0 : 5)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            Task { await refreshWithFeedback() }
+        }
+        .help(monitor.isLoading ? L10n.usageBarRefreshingHint
+              : (justRefreshed ? L10n.usageBarJustRefreshed
+                                : L10n.usageBarTapToRefresh))
+        .animation(.easeInOut(duration: 0.3), value: effectiveMode)
         .onAppear {
             withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
                 pulsePhase = true
@@ -1573,15 +1567,113 @@ struct UsageStatsBar: View {
         }
     }
 
+    @ViewBuilder
+    private var barBackground: some View {
+        if shouldPulseFrame {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(theme.errorColor.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(theme.errorColor.opacity(pulsePhase ? 0.9 : 0.35), lineWidth: 1.2)
+                )
+        } else {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(theme.overlay.opacity(0.16))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(theme.usageBorder.opacity(0.7), lineWidth: 0.5)
+                )
+        }
+    }
+
+    @ViewBuilder
+    private var refreshIndicator: some View {
+        if monitor.isLoading {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .notchFont(8)
+                .foregroundColor(theme.mutedText)
+                .rotationEffect(.degrees(pulsePhase ? 360 : 0))
+                .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: pulsePhase)
+                .padding(.leading, 6)
+        } else if justRefreshed {
+            HStack(spacing: 2) {
+                Image(systemName: "checkmark.circle.fill")
+                    .notchFont(8)
+                Text(L10n.usageBarJustNow)
+                    .notchFont(8, weight: .semibold)
+            }
+            .foregroundColor(theme.doneColor)
+            .padding(.leading, 6)
+            .transition(.opacity.combined(with: .scale(scale: 0.85)))
+        }
+    }
+
+    private func refreshWithFeedback() async {
+        await monitor.refresh()
+        withAnimation(.easeOut(duration: 0.25)) {
+            justRefreshed = true
+        }
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        withAnimation(.easeIn(duration: 0.4)) {
+            justRefreshed = false
+        }
+    }
+
+    // MARK: - Mode renderers
+
+    @ViewBuilder
+    private func compactBody(info: RateLimitDisplayInfo) -> some View {
+        HStack(spacing: 6) {
+            usageGaugeCompact(pct: info.fiveHourPercent ?? 0, label: "5h", resetAt: info.fiveHourResetAt)
+            if let sevenDay = info.sevenDayPercent, sevenDay > 0 {
+                usageGaugeCompact(pct: sevenDay, label: "7d", resetAt: info.sevenDayResetAt)
+            }
+            Rectangle()
+                .fill(theme.usageBorder.opacity(0.8))
+                .frame(width: 1, height: 14)
+            if totalMinutes > 0 {
+                Text(formatTime(totalMinutes))
+                    .notchFont(8, weight: .regular, design: .monospaced)
+                    .notchSecondaryForeground()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func alertBody(info: RateLimitDisplayInfo) -> some View {
+        // Vertical stack — horizontal layout collided when two gauges shared
+        // a single row inside the notch's constrained width (5h's percentage
+        // overlapped 7d's). Per-row layout keeps both gauges readable and
+        // aligns label / percentage / bar columns across both rows.
+        VStack(alignment: .leading, spacing: 3) {
+            usageGaugeAlert(pct: info.fiveHourPercent ?? 0, label: "5h", resetAt: info.fiveHourResetAt)
+            if let sevenDay = info.sevenDayPercent, sevenDay > 0 {
+                usageGaugeAlert(pct: sevenDay, label: "7d", resetAt: info.sevenDayResetAt)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func timeBody(info: RateLimitDisplayInfo) -> some View {
+        HStack(spacing: 10) {
+            usageGaugeTime(pct: info.fiveHourPercent ?? 0, label: "5h", resetAt: info.fiveHourResetAt)
+            if let sevenDay = info.sevenDayPercent {
+                Rectangle()
+                    .fill(theme.usageBorder.opacity(0.4))
+                    .frame(width: 1, height: 22)
+                usageGaugeTime(pct: sevenDay, label: "7d", resetAt: info.sevenDayResetAt)
+            }
+        }
+    }
+
     private func shouldBlink(_ pct: Int) -> Bool {
         usageWarningThreshold > 0 && pct >= usageWarningThreshold
     }
 
     @ViewBuilder
-    private func usageGauge(pct: Int, label: String, resetAt: Date?) -> some View {
+    private func usageGaugeCompact(pct: Int, label: String, resetAt: Date?) -> some View {
         let color = barColor(pct)
         VStack(alignment: .leading, spacing: 2) {
-            // Label + percentage
             HStack(spacing: 3) {
                 Text(label)
                     .notchFont(7, weight: .bold)
@@ -1590,18 +1682,13 @@ struct UsageStatsBar: View {
                     .notchFont(9, weight: .semibold, design: .monospaced)
                     .foregroundColor(color)
                     .opacity(shouldBlink(pct) ? (pulsePhase ? 1.0 : 0.3) : 1.0)
-                if let resetAt = resetAt {
-                    let remaining = resetAt.timeIntervalSinceNow
-                    if remaining > 0 {
-                        Text(formatResetShort(remaining))
-                            .notchFont(7)
-                            .foregroundColor(theme.usageText)
-                            .opacity(0.45)
-                    }
+                if let resetAt, resetAt.timeIntervalSinceNow > 0 {
+                    Text(formatResetShort(resetAt.timeIntervalSinceNow))
+                        .notchFont(7)
+                        .foregroundColor(theme.usageText)
+                        .opacity(0.45)
                 }
             }
-
-            // Progress bar
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(theme.usageTrack.opacity(0.85))
@@ -1610,6 +1697,80 @@ struct UsageStatsBar: View {
                     .fill(color)
                     .frame(width: max(2, 50 * CGFloat(pct) / 100), height: 3)
                     .shadow(color: color.opacity(0.4), radius: 2)
+            }
+        }
+        .help(usageTooltip(pct: pct, label: label, resetAt: resetAt))
+    }
+
+    @ViewBuilder
+    private func usageGaugeAlert(pct: Int, label: String, resetAt: Date?) -> some View {
+        let color = barColor(pct)
+        // Single-row layout: LABEL | PERCENTAGE | BAR | RESET-HINT
+        // Fixed widths on label/percentage so multiple rows line up vertically
+        // when stacked. Previous horizontal-stack-of-gauges design overflowed
+        // the notch width and percentages overlapped each other.
+        HStack(spacing: 5) {
+            Text(label.uppercased())
+                .notchFont(8, weight: .semibold)
+                .foregroundColor(theme.mutedText)
+                .tracking(0.4)
+                .frame(width: 18, alignment: .leading)
+            Text("\(pct)%")
+                .notchFont(13, weight: .bold, design: .monospaced)
+                .foregroundColor(color)
+                .opacity(shouldBlink(pct) ? (pulsePhase ? 1.0 : 0.4) : 1.0)
+                .shadow(color: color.opacity(shouldBlink(pct) ? 0.7 : 0), radius: 4)
+                .frame(width: 38, alignment: .leading)
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(theme.usageTrack.opacity(0.85))
+                    .frame(width: 60, height: 5)
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(color)
+                    .frame(width: max(2, 60 * CGFloat(pct) / 100), height: 5)
+                    .shadow(color: color.opacity(0.65), radius: 3)
+            }
+            if let resetAt, resetAt.timeIntervalSinceNow > 0 {
+                Text(formatResetShort(resetAt.timeIntervalSinceNow))
+                    .notchFont(7)
+                    .foregroundColor(theme.usageText)
+                    .opacity(0.55)
+                    .frame(minWidth: 32, alignment: .leading)
+            }
+        }
+        .help(usageTooltip(pct: pct, label: label, resetAt: resetAt))
+    }
+
+    @ViewBuilder
+    private func usageGaugeTime(pct: Int, label: String, resetAt: Date?) -> some View {
+        let color = barColor(pct)
+        HStack(spacing: 6) {
+            ZStack {
+                Circle()
+                    .stroke(theme.usageTrack.opacity(0.85), lineWidth: 2)
+                    .frame(width: 22, height: 22)
+                Circle()
+                    .trim(from: 0, to: max(0.02, CGFloat(pct) / 100))
+                    .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .frame(width: 22, height: 22)
+                    .rotationEffect(.degrees(-90))
+                Text("\(pct)%")
+                    .notchFont(7, weight: .semibold, design: .monospaced)
+                    .foregroundColor(color)
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                if let resetAt, resetAt.timeIntervalSinceNow > 0 {
+                    Text(formatResetShort(resetAt.timeIntervalSinceNow))
+                        .notchFont(11, weight: .semibold, design: .monospaced)
+                        .foregroundColor(theme.usageText)
+                } else {
+                    Text("--")
+                        .notchFont(11, weight: .semibold, design: .monospaced)
+                        .foregroundColor(theme.mutedText)
+                }
+                Text(label == "7d" ? L10n.usageBarTimeUntil7d : L10n.usageBarTimeUntil5h)
+                    .notchFont(7)
+                    .foregroundColor(theme.mutedText)
             }
         }
         .help(usageTooltip(pct: pct, label: label, resetAt: resetAt))
@@ -1654,6 +1815,21 @@ struct CodexUsageStatsBar: View {
     @AppStorage("usageWarningThreshold") private var usageWarningThreshold: Int = 90
     @State private var appear = false
     @State private var pulsePhase = false
+    @State private var justRefreshed = false
+
+    private var maxPercent: Int {
+        monitor.snapshot?.windows.map { $0.roundedUsedPercentage }.max() ?? 0
+    }
+
+    private var effectiveMode: UsageBarDisplayMode {
+        let pref = notchStore.customization.usageBarDisplayMode
+        guard pref == .auto else { return pref }
+        return maxPercent >= 60 ? .alert : .compact
+    }
+
+    private var shouldPulseFrame: Bool {
+        effectiveMode == .alert && maxPercent >= 80
+    }
 
     private func barColor(_ pct: Int) -> Color {
         let threshold = usageWarningThreshold
@@ -1663,52 +1839,74 @@ struct CodexUsageStatsBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 0) {
             if let snapshot = monitor.snapshot, !snapshot.isEmpty {
-                Text("Codex")
-                    .notchFont(7, weight: .bold)
-                    .notchSecondaryForeground()
-                    .opacity(0.5)
+                HStack(spacing: 6) {
+                    Text("Codex")
+                        .notchFont(7, weight: .bold)
+                        .notchSecondaryForeground()
+                        .opacity(0.5)
 
-                Rectangle()
-                    .fill(theme.usageBorder.opacity(0.8))
-                    .frame(width: 1, height: 14)
+                    Rectangle()
+                        .fill(theme.usageBorder.opacity(0.8))
+                        .frame(width: 1, height: effectiveMode == .alert ? 18 : 14)
 
-                ForEach(snapshot.windows) { window in
-                    usageGauge(
-                        pct: window.roundedUsedPercentage,
-                        label: window.label,
-                        resetAt: window.resetsAt
-                    )
+                    Group {
+                        switch effectiveMode {
+                        case .auto, .compact:
+                            HStack(spacing: 6) {
+                                ForEach(snapshot.windows) { window in
+                                    usageGaugeCompact(
+                                        pct: window.roundedUsedPercentage,
+                                        label: window.label,
+                                        resetAt: window.resetsAt
+                                    )
+                                }
+                            }
+                        case .alert:
+                            VStack(alignment: .leading, spacing: 3) {
+                                ForEach(snapshot.windows) { window in
+                                    usageGaugeAlert(
+                                        pct: window.roundedUsedPercentage,
+                                        label: window.label,
+                                        resetAt: window.resetsAt
+                                    )
+                                }
+                            }
+                        case .time:
+                            HStack(spacing: 10) {
+                                ForEach(Array(snapshot.windows.enumerated()), id: \.element.id) { idx, window in
+                                    if idx > 0 {
+                                        Rectangle()
+                                            .fill(theme.usageBorder.opacity(0.4))
+                                            .frame(width: 1, height: 22)
+                                    }
+                                    usageGaugeTime(
+                                        pct: window.roundedUsedPercentage,
+                                        label: window.label,
+                                        resetAt: window.resetsAt
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
-
-                Image(systemName: "arrow.clockwise")
-                    .notchFont(7)
-                    .foregroundColor(theme.mutedText)
-                    .opacity(monitor.isLoading ? 0.5 : 0.2)
-                    .rotationEffect(.degrees(monitor.isLoading ? 360 : 0))
-                    .animation(
-                        monitor.isLoading
-                            ? .linear(duration: 1).repeatForever(autoreverses: false)
-                            : .default,
-                        value: monitor.isLoading
-                    )
-                    .contentShape(Rectangle().size(width: 16, height: 16))
-                    .onTapGesture { Task { await monitor.refresh() } }
+                refreshIndicator
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(theme.overlay.opacity(0.16))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(theme.usageBorder.opacity(0.7), lineWidth: 0.5)
-                )
-        )
+        .padding(.horizontal, effectiveMode == .alert ? 10 : 8)
+        .padding(.vertical, effectiveMode == .alert ? 5 : 4)
+        .background(barBackground)
         .opacity(appear ? 1 : 0)
         .offset(y: appear ? 0 : 5)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            Task { await refreshWithFeedback() }
+        }
+        .help(monitor.isLoading ? L10n.usageBarRefreshingHint
+              : (justRefreshed ? L10n.usageBarJustRefreshed
+                                : L10n.usageBarTapToRefresh))
+        .animation(.easeInOut(duration: 0.3), value: effectiveMode)
         .onAppear {
             withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
                 pulsePhase = true
@@ -1719,12 +1917,64 @@ struct CodexUsageStatsBar: View {
         }
     }
 
+    @ViewBuilder
+    private var barBackground: some View {
+        if shouldPulseFrame {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(theme.errorColor.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(theme.errorColor.opacity(pulsePhase ? 0.9 : 0.35), lineWidth: 1.2)
+                )
+        } else {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(theme.overlay.opacity(0.16))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(theme.usageBorder.opacity(0.7), lineWidth: 0.5)
+                )
+        }
+    }
+
+    @ViewBuilder
+    private var refreshIndicator: some View {
+        if monitor.isLoading {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .notchFont(8)
+                .foregroundColor(theme.mutedText)
+                .rotationEffect(.degrees(pulsePhase ? 360 : 0))
+                .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: pulsePhase)
+                .padding(.leading, 6)
+        } else if justRefreshed {
+            HStack(spacing: 2) {
+                Image(systemName: "checkmark.circle.fill")
+                    .notchFont(8)
+                Text(L10n.usageBarJustNow)
+                    .notchFont(8, weight: .semibold)
+            }
+            .foregroundColor(theme.doneColor)
+            .padding(.leading, 6)
+            .transition(.opacity.combined(with: .scale(scale: 0.85)))
+        }
+    }
+
+    private func refreshWithFeedback() async {
+        await monitor.refresh()
+        withAnimation(.easeOut(duration: 0.25)) {
+            justRefreshed = true
+        }
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        withAnimation(.easeIn(duration: 0.4)) {
+            justRefreshed = false
+        }
+    }
+
     private func shouldBlink(_ pct: Int) -> Bool {
         usageWarningThreshold > 0 && pct >= usageWarningThreshold
     }
 
     @ViewBuilder
-    private func usageGauge(pct: Int, label: String, resetAt: Date?) -> some View {
+    private func usageGaugeCompact(pct: Int, label: String, resetAt: Date?) -> some View {
         let color = barColor(pct)
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 3) {
@@ -1750,6 +2000,80 @@ struct CodexUsageStatsBar: View {
                     .fill(color)
                     .frame(width: max(2, 50 * CGFloat(pct) / 100), height: 3)
                     .shadow(color: color.opacity(0.4), radius: 2)
+            }
+        }
+        .help(usageTooltip(pct: pct, label: label, resetAt: resetAt))
+    }
+
+    @ViewBuilder
+    private func usageGaugeAlert(pct: Int, label: String, resetAt: Date?) -> some View {
+        let color = barColor(pct)
+        // Single-row layout: LABEL | PERCENTAGE | BAR | RESET-HINT
+        // Fixed widths on label/percentage so multiple rows line up vertically
+        // when stacked. Previous horizontal-stack-of-gauges design overflowed
+        // the notch width and percentages overlapped each other.
+        HStack(spacing: 5) {
+            Text(label.uppercased())
+                .notchFont(8, weight: .semibold)
+                .foregroundColor(theme.mutedText)
+                .tracking(0.4)
+                .frame(width: 18, alignment: .leading)
+            Text("\(pct)%")
+                .notchFont(13, weight: .bold, design: .monospaced)
+                .foregroundColor(color)
+                .opacity(shouldBlink(pct) ? (pulsePhase ? 1.0 : 0.4) : 1.0)
+                .shadow(color: color.opacity(shouldBlink(pct) ? 0.7 : 0), radius: 4)
+                .frame(width: 38, alignment: .leading)
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(theme.usageTrack.opacity(0.85))
+                    .frame(width: 60, height: 5)
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(color)
+                    .frame(width: max(2, 60 * CGFloat(pct) / 100), height: 5)
+                    .shadow(color: color.opacity(0.65), radius: 3)
+            }
+            if let resetAt, resetAt.timeIntervalSinceNow > 0 {
+                Text(formatResetShort(resetAt.timeIntervalSinceNow))
+                    .notchFont(7)
+                    .foregroundColor(theme.usageText)
+                    .opacity(0.55)
+                    .frame(minWidth: 32, alignment: .leading)
+            }
+        }
+        .help(usageTooltip(pct: pct, label: label, resetAt: resetAt))
+    }
+
+    @ViewBuilder
+    private func usageGaugeTime(pct: Int, label: String, resetAt: Date?) -> some View {
+        let color = barColor(pct)
+        HStack(spacing: 6) {
+            ZStack {
+                Circle()
+                    .stroke(theme.usageTrack.opacity(0.85), lineWidth: 2)
+                    .frame(width: 22, height: 22)
+                Circle()
+                    .trim(from: 0, to: max(0.02, CGFloat(pct) / 100))
+                    .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .frame(width: 22, height: 22)
+                    .rotationEffect(.degrees(-90))
+                Text("\(pct)%")
+                    .notchFont(7, weight: .semibold, design: .monospaced)
+                    .foregroundColor(color)
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                if let resetAt, resetAt.timeIntervalSinceNow > 0 {
+                    Text(formatResetShort(resetAt.timeIntervalSinceNow))
+                        .notchFont(11, weight: .semibold, design: .monospaced)
+                        .foregroundColor(theme.usageText)
+                } else {
+                    Text("--")
+                        .notchFont(11, weight: .semibold, design: .monospaced)
+                        .foregroundColor(theme.mutedText)
+                }
+                Text(label)
+                    .notchFont(7)
+                    .foregroundColor(theme.mutedText)
             }
         }
         .help(usageTooltip(pct: pct, label: label, resetAt: resetAt))

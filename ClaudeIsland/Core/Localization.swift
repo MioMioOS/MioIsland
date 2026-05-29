@@ -659,6 +659,39 @@ enum L10n {
     static var notchFontXLargeFull: String { tr("Extra Large", "特大") }
     static var notchShowBuddy: String { tr("Show Buddy", "显示宠物") }
     static var notchShowUsageBar: String { tr("Show Usage Bar", "显示用量条") }
+
+    // Usage bar display mode picker
+    static var notchUsageBarDisplayMode: String { tr("Display Mode", "显示方式") }
+    static var usageBarModeAuto: String { tr("Auto", "自动") }
+    static var usageBarModeAlert: String { tr("Alert", "警戒") }
+    static var usageBarModeCompact: String { tr("Compact", "紧凑") }
+    static var usageBarModeTime: String { tr("Time", "时间") }
+    static var usageBarModeAutoDescription: String {
+        tr("< 60% Compact · ≥ 60% Alert · ≥ 80% Red Pulse",
+           "< 60% 紧凑 · ≥ 60% 警戒 · ≥ 80% 红色脉冲")
+    }
+    static var usageBarModeAlertDescription: String {
+        tr("Always show enlarged warning layout", "始终显示加粗警戒样式")
+    }
+    static var usageBarModeCompactDescription: String {
+        tr("Information-dense, low attention", "信息密集，低打扰")
+    }
+    static var usageBarModeTimeDescription: String {
+        tr("Emphasize remaining time + ring", "突出剩余时间 + 环形")
+    }
+
+    // Per-provider sub-toggles
+    static var usageBarShowClaude: String { tr("Show Claude", "显示 Claude") }
+    static var usageBarShowCodex: String { tr("Show Codex", "显示 Codex") }
+
+    // Usage bar interaction hints
+    static var usageBarTapToRefresh: String { tr("Tap to refresh", "点击立即刷新") }
+    static var usageBarRefreshingHint: String { tr("Refreshing…", "刷新中…") }
+    static var usageBarJustRefreshed: String { tr("Just updated", "已更新") }
+    static var usageBarJustNow: String { tr("just now", "刚刚") }
+    static var usageBarTimeUntil5h: String { tr("until 5h reset", "5h 重置") }
+    static var usageBarTimeUntil7d: String { tr("until 7d reset", "7d 重置") }
+
     static var notchHardwareMode: String { tr("Hardware Notch", "硬件刘海") }
     static var notchHardwareAuto: String { tr("Auto", "自动") }
     static var notchHardwareForceVirtual: String { tr("Force Virtual", "强制虚拟") }

@@ -55,6 +55,11 @@ struct NotchCustomizationSettingsView: View {
                 .accessibilityLabel(L10n.notchShowUsageBar)
             }
 
+            if store.customization.showUsageBar {
+                usageBarDisplayModeRow
+                usageBarProviderRow
+            }
+
             hardwareModeRow
             customizeButton
         }
@@ -270,6 +275,82 @@ struct NotchCustomizationSettingsView: View {
     }
 
     // MARK: - Hardware mode picker row
+
+    // MARK: - Usage bar display mode picker
+
+    private func usageBarModeLabel(_ mode: UsageBarDisplayMode) -> String {
+        switch mode {
+        case .auto: return L10n.usageBarModeAuto
+        case .alert: return L10n.usageBarModeAlert
+        case .compact: return L10n.usageBarModeCompact
+        case .time: return L10n.usageBarModeTime
+        }
+    }
+
+    private func usageBarModeDescription(_ mode: UsageBarDisplayMode) -> String {
+        switch mode {
+        case .auto: return L10n.usageBarModeAutoDescription
+        case .alert: return L10n.usageBarModeAlertDescription
+        case .compact: return L10n.usageBarModeCompactDescription
+        case .time: return L10n.usageBarModeTimeDescription
+        }
+    }
+
+    private var usageBarDisplayModeRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            controlRow(icon: "chart.bar.xaxis", label: L10n.notchUsageBarDisplayMode) {
+                Menu {
+                    ForEach(UsageBarDisplayMode.allCases) { mode in
+                        Button(usageBarModeLabel(mode)) {
+                            store.update { $0.usageBarDisplayMode = mode }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(usageBarModeLabel(store.customization.usageBarDisplayMode))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(theme.primaryText.opacity(0.95))
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 9))
+                            .foregroundColor(theme.mutedText)
+                    }
+                }
+                .buttonStyle(.plain)
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel(L10n.notchUsageBarDisplayMode)
+            }
+            Text(usageBarModeDescription(store.customization.usageBarDisplayMode))
+                .font(.system(size: 10))
+                .foregroundColor(theme.mutedText.opacity(0.75))
+                .padding(.leading, 28)
+        }
+    }
+
+    // MARK: - Per-provider sub-toggles
+
+    private var usageBarProviderRow: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+            visibilityToggle(
+                icon: "circle.hexagongrid.fill",
+                label: L10n.usageBarShowClaude,
+                isOn: store.customization.showClaudeUsageBar
+            ) {
+                store.update { $0.showClaudeUsageBar.toggle() }
+            }
+            .accessibilityLabel(L10n.usageBarShowClaude)
+
+            visibilityToggle(
+                icon: "cpu.fill",
+                label: L10n.usageBarShowCodex,
+                isOn: store.customization.showCodexUsageBar
+            ) {
+                store.update { $0.showCodexUsageBar.toggle() }
+            }
+            .accessibilityLabel(L10n.usageBarShowCodex)
+        }
+    }
 
     private var hardwareModeRow: some View {
         controlRow(icon: "laptopcomputer", label: L10n.notchHardwareMode) {
