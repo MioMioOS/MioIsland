@@ -200,7 +200,27 @@ final class MioAgentEnroller: ObservableObject {
     }
 
     private func handleTermination(exitCode: Int32) {
-        detachPipeHandlers()
+        // Deterministically DRAIN any bytes the edge-triggered readability handlers didn't
+        // consume — especially the final error line on a fast-failing login. The per-chunk
+        // ingest Tasks and this termination Task both hop onto the main actor with NO ordering
+        // guarantee, so racing them intermittently lost mio-agent's real reason and showed a
+        // generic "exited N" instead. We detach the handlers, then synchronously read what's
+        // left and fold it into lastLine BEFORE building the error detail.
+        let outHandle = outPipe?.fileHandleForReading
+        let errHandle = errPipe?.fileHandleForReading
+        outHandle?.readabilityHandler = nil
+        errHandle?.readabilityHandler = nil
+        for handle in [outHandle, errHandle].compactMap({ $0 }) {
+            let rest = handle.readDataToEndOfFile()
+            if let tail = String(data: rest, encoding: .utf8), !tail.isEmpty {
+                for rawLine in tail.split(separator: "\n", omittingEmptySubsequences: true) {
+                    let line = String(rawLine).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !line.isEmpty { lastLine = String(line.prefix(240)) }
+                }
+            }
+        }
+        outPipe = nil
+        errPipe = nil
         process = nil
         if exitCode == 0 {
             phase = .succeeded
