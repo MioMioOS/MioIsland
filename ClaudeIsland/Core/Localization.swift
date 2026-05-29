@@ -586,8 +586,8 @@ enum L10n {
         "请先安装内置的 mio-agent 以启动本地动作执行。"
     ) }
     static var agentPhaseDescNotConfigured: String { tr(
-        "Agent is installed but not configured. Run mio-agent login in Terminal to set up before starting.",
-        "Agent 已安装但未配置。请在终端运行 mio-agent login 完成配置后再启动。"
+        "Agent is installed but not enrolled. Use the Workspace enrollment card below to configure it in-app — no Terminal required.",
+        "Agent 已安装但未注册。请使用下方的工作区配置卡在应用内完成配置 —— 无需打开终端。"
     ) }
     static var agentPhaseDescInstalledUnloaded: String { tr(
         "The LaunchAgent is not running. Start it to prepare local action execution.",
@@ -646,7 +646,7 @@ enum L10n {
     static var agentStateInstalled: String     { tr("Installed",   "已安装") }
     static var agentStateMissing: String       { tr("Missing",     "缺失") }
     static var agentStateConfigPresent: String { tr("Present",     "存在") }
-    static var agentStateConfigMissing: String { tr("Missing — run mio-agent login", "缺失 — 请运行 mio-agent login") }
+    static var agentStateConfigMissing: String { tr("Missing — enroll below", "缺失 — 在下方注册") }
     static var agentStateLoaded: String        { tr("Loaded",      "已加载") }
     static var agentStateUnloaded: String      { tr("Unloaded",    "未加载") }
     static var agentStateRunning: String       { tr("Running",     "运行中") }
@@ -663,13 +663,6 @@ enum L10n {
     static var agentButtonStop: String     { tr("Stop",              "停止") }
     static var agentButtonOpenLog: String  { tr("Open log file",     "打开日志文件") }
     static var agentButtonCopyLog: String  { tr("Copy last 100 lines", "复制最后 100 行") }
-
-    // Setup required hint
-    static var agentSetupHintCommand: String { tr(
-        "Run this command in Terminal, then enter your server URL (e.g. https://mio.wdao.chat) when prompted:",
-        "在终端运行此命令，按提示输入服务器 URL（如 https://mio.wdao.chat）："
-    ) }
-    static var agentSetupHintCopy: String { tr("Copy command", "复制命令") }
 
     // Logs card
     static var agentLogsHint: String { tr(
@@ -721,5 +714,91 @@ enum L10n {
     ) }
     static func agentLastChecked(_ time: String) -> String {
         tr("Last checked \(time)", "最后检查 \(time)")
+    }
+
+    // MARK: - In-app enrollment (MioAgentEnroller / R2.1)
+
+    // Enroll card — section + copy
+    static var agentEnrollSection: String { tr("Workspace enrollment", "工作区配置") }
+    static var agentEnrollNeededTitle: String { tr("Configure this workspace", "配置此工作区") }
+    static var agentEnrollNeededBody: String { tr(
+        "Enroll this Mac as a workspace daemon. MioIsland runs mio-agent login for you and the binary writes its own Keychain + ~/.mio/agent.json — no Terminal required.",
+        "将此 Mac 注册为工作区守护进程。MioIsland 将为你运行 mio-agent login，二进制会自行写入 Keychain 与 ~/.mio/agent.json —— 无需打开终端。"
+    ) }
+    static var agentEnrollServerLabel: String { tr("Server URL", "服务器 URL") }
+    static var agentEnrollServerPlaceholder: String { tr("https://mio.wdao.chat", "https://mio.wdao.chat") }
+    static var agentEnrollDeviceLabel: String { tr("Device name", "设备名称") }
+    static var agentEnrollButtonStart: String { tr("Enroll workspace", "注册工作区") }
+    static var agentEnrollButtonCancel: String { tr("Cancel", "取消") }
+    static var agentEnrollButtonReEnroll: String { tr("Re-enroll", "重新注册") }
+    static var agentEnrollButtonDone: String { tr("Done", "完成") }
+    static var agentEnrollButtonRetry: String { tr("Retry", "重试") }
+
+    // Enroll phase status copy
+    static var agentEnrollLaunching: String { tr(
+        "Starting mio-agent login…",
+        "正在启动 mio-agent login…"
+    ) }
+    static var agentEnrollAwaiting: String { tr(
+        "Scan the Pair-iPhone QR (it now also carries this enrollment) and approve on your phone. Waiting for approval…",
+        "扫描配对 iPhone 二维码（现已同时携带此注册请求）并在手机上确认。等待批准中…"
+    ) }
+    static var agentEnrollSucceeded: String { tr(
+        "Enrolled. mio-agent wrote its Keychain token and ~/.mio/agent.json. You can start the daemon below.",
+        "已注册。mio-agent 已写入 Keychain 令牌与 ~/.mio/agent.json。可在下方启动守护进程。"
+    ) }
+    static var agentEnrollCopyDeeplink: String { tr("Copy enrollment link", "复制注册链接") }
+    static var agentEnrollAlreadyConfigured: String { tr(
+        "This workspace is enrolled. Re-enroll to bind it to a different account or workspace.",
+        "此工作区已注册。如需绑定其他账户或工作区，可重新注册。"
+    ) }
+
+    // Enroll errors
+    static var agentEnrollErrNoBinary: String { tr(
+        "mio-agent is not installed. Install it first, then enroll.",
+        "mio-agent 未安装。请先安装再注册。"
+    ) }
+    static func agentEnrollErrLaunch(_ msg: String) -> String {
+        tr("Could not launch mio-agent login: \(msg)", "无法启动 mio-agent login：\(msg)")
+    }
+    static func agentEnrollErrExit(_ code: Int32) -> String {
+        tr("Enrollment failed (mio-agent login exit \(code)).", "注册失败（mio-agent login 退出码 \(code)）。")
+    }
+
+    // Autonomous agent block editor
+    static var agentAutoSection: String { tr("Autonomous agent", "自治 agent") }
+    static var agentAutoEnabledLabel: String { tr("Run autonomous agent loop", "运行自治 agent 循环") }
+    static var agentAutoEnabledSublabel: String { tr(
+        "Default-off. When on, the daemon subscribes to a channel and replies autonomously.",
+        "默认关闭。开启后，守护进程将订阅一个频道并自治回复。"
+    ) }
+    static var agentAutoWorkroomLabel: String { tr("Workroom ID", "工作室 ID") }
+    static var agentAutoChannelLabel: String { tr("Channel ID", "频道 ID") }
+    static var agentAutoHandleLabel: String { tr("Handle", "触发标识") }
+    static var agentAutoQuietLabel: String { tr("Quiet seconds", "静默秒数") }
+    static var agentAutoMaxRepliesLabel: String { tr("Max replies / window", "每窗口最大回复数") }
+    static var agentAutoWindowLabel: String { tr("Window seconds", "窗口秒数") }
+    static var agentAutoSave: String { tr("Save agent config", "保存 agent 配置") }
+    static var agentAutoClear: String { tr("Remove block", "移除配置块") }
+    static var agentAutoSaved: String { tr("Saved to ~/.mio/agent.json.", "已保存至 ~/.mio/agent.json。") }
+    static var agentAutoNeedsConfig: String { tr(
+        "Enroll this workspace first — the autonomous block lives in ~/.mio/agent.json.",
+        "请先注册此工作区 —— 自治配置块位于 ~/.mio/agent.json。"
+    ) }
+    static var agentAutoRequiresWorkroom: String { tr(
+        "Workroom ID and Channel ID are required to enable the loop.",
+        "启用循环需要填写工作室 ID 与频道 ID。"
+    ) }
+
+    // Config errors (MioAgentEnroller.ConfigError)
+    static var agentEnrollErrConfigMissing: String { tr(
+        "~/.mio/agent.json not found. Enroll the workspace first.",
+        "未找到 ~/.mio/agent.json。请先注册工作区。"
+    ) }
+    static func agentEnrollErrConfigMalformed(_ msg: String) -> String {
+        tr("agent.json is malformed: \(msg)", "agent.json 格式错误：\(msg)")
+    }
+    static func agentEnrollErrConfigWrite(_ msg: String) -> String {
+        tr("Could not write agent.json: \(msg)", "无法写入 agent.json：\(msg)")
     }
 }

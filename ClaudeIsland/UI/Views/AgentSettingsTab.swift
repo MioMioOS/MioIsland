@@ -131,6 +131,7 @@ struct AgentLifecycleSnapshot {
 
 struct AgentSettingsTab: View {
     @State private var snap = AgentLifecycleSnapshot()
+    @ObservedObject private var enroller = MioAgentEnroller.shared
 
     // Known paths
     private let binaryPath = FileManager.default.homeDirectoryForCurrentUser
@@ -161,6 +162,25 @@ struct AgentSettingsTab: View {
             // MARK: Lifecycle detail rows
             SectionLabel(L10n.agentSectionLifecycle)
             lifecycleDetailRows
+
+            // MARK: Workspace enrollment (R2.1 — shells out to `mio-agent login`)
+            // Shown whenever the binary is installed. The card adapts: enroll
+            // form when unconfigured, status while enrolling, "already enrolled"
+            // once agent.json exists.
+            if snap.binaryExists {
+                SectionLabel(L10n.agentEnrollSection)
+                EnrollWorkspaceCard(
+                    serverUrl: SyncManager.shared.serverUrl,
+                    isConfigured: snap.configExists,
+                    onChanged: { Task { await refreshStatus() } }
+                )
+            }
+
+            // MARK: Autonomous agent block (plain JSON merge into agent.json)
+            if snap.configExists {
+                SectionLabel(L10n.agentAutoSection)
+                AutonomousAgentCard()
+            }
 
             // MARK: Controls
             SectionLabel(L10n.agentSectionControls)
@@ -348,32 +368,18 @@ struct AgentSettingsTab: View {
                 Spacer()
             }
 
-            // Setup required hint: shown when agent.json is missing
+            // Setup required hint: when agent.json is missing, point the user at
+            // the in-app Workspace enrollment card above. The old "run mio-agent
+            // login in Terminal" stub is retired (#R2.1) — enrollment is in-app.
             if snap.phase == .notConfigured {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(L10n.agentSetupHintCommand)
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(Theme.subtle)
+                    Text(L10n.agentPhaseDescNotConfigured)
                         .font(.system(size: 10))
                         .foregroundColor(Theme.subtle)
                         .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 6) {
-                        Text("mio-agent login")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(Theme.detailText)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Theme.controlFill)
-                            .clipShape(RoundedRectangle(cornerRadius: 5))
-                        Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString("mio-agent login", forType: .string)
-                        } label: {
-                            Image(systemName: "doc.on.clipboard")
-                                .font(.system(size: 10))
-                                .foregroundColor(Theme.subtle)
-                        }
-                        .buttonStyle(.plain)
-                        .help(L10n.agentSetupHintCopy)
-                    }
                 }
                 .padding(.top, 4)
             }
@@ -886,5 +892,409 @@ struct AgentSettingsTab: View {
         </dict>
         </plist>
         """
+    }
+}
+
+// MARK: - EnrollWorkspaceCard (R2.1 in-app enrollment)
+
+/// In-app workspace enrollment. Shells out to `mio-agent login` (which owns the
+/// Keychain + agent.json write) and surfaces the enroll intent it is polling so
+/// the Pair-iPhone QR can carry it (R2.7 dual QR). Replaces the retired
+/// "run mio-agent login in Terminal" stub.
+private struct EnrollWorkspaceCard: View {
+    /// The currently configured CodeLight/MioServer URL (from SyncManager).
+    let serverUrl: String?
+    /// True when ~/.mio/agent.json already exists (already enrolled).
+    let isConfigured: Bool
+    /// Called after a successful enroll or cancel so the parent re-probes status.
+    let onChanged: () -> Void
+
+    @ObservedObject private var enroller = MioAgentEnroller.shared
+    @State private var serverDraft: String = ""
+    @State private var deviceDraft: String = Host.current().localizedName ?? "Mac"
+
+    private var effectiveServer: String {
+        let s = serverDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return s.isEmpty ? (serverUrl ?? "") : s
+    }
+
+    private var isValidServer: Bool {
+        guard let u = URL(string: effectiveServer), let scheme = u.scheme?.lowercased() else { return false }
+        return (scheme == "https" || scheme == "http") && (u.host?.isEmpty == false)
+    }
+
+    var body: some View {
+        SettingsCard {
+            switch enroller.phase {
+            case .idle:
+                if isConfigured { alreadyConfiguredContent } else { enrollFormContent }
+            case .launching, .awaitingApproval:
+                inProgressContent
+            case .succeeded:
+                succeededContent
+            case .failed(let msg):
+                failedContent(msg)
+            }
+        }
+        .onAppear {
+            // Seed the server field from the configured URL so the user usually
+            // just clicks Enroll. Editable in case they want a different server.
+            if serverDraft.isEmpty { serverDraft = serverUrl ?? "" }
+        }
+    }
+
+    // MARK: States
+
+    private var enrollFormContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(L10n.agentEnrollNeededTitle)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(Theme.detailText)
+            Text(L10n.agentEnrollNeededBody)
+                .font(.system(size: 11))
+                .foregroundColor(Theme.subtle)
+                .fixedSize(horizontal: false, vertical: true)
+
+            labeledField(label: L10n.agentEnrollServerLabel,
+                         placeholder: L10n.agentEnrollServerPlaceholder,
+                         text: $serverDraft)
+            labeledField(label: L10n.agentEnrollDeviceLabel,
+                         placeholder: "Mac",
+                         text: $deviceDraft)
+
+            actionButton(
+                label: L10n.agentEnrollButtonStart,
+                icon: "person.badge.key.fill",
+                enabled: isValidServer
+            ) {
+                startEnroll()
+            }
+        }
+    }
+
+    private var inProgressContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small).scaleEffect(0.8)
+                Text(enroller.phase == .launching
+                     ? L10n.agentEnrollLaunching
+                     : L10n.agentEnrollAwaiting)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(Theme.detailText.opacity(0.9))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let intent = enroller.intent {
+                HStack(spacing: 6) {
+                    Image(systemName: "qrcode")
+                        .font(.system(size: 11))
+                        .foregroundColor(Theme.accent)
+                    Text("intent \(intent.intentId.prefix(8))")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(Theme.subtle)
+                    Spacer()
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(intent.deeplink, forType: .string)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.on.clipboard").font(.system(size: 10))
+                            Text(L10n.agentEnrollCopyDeeplink).font(.system(size: 10, weight: .medium))
+                        }
+                        .foregroundColor(Theme.subtleStrong)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if !enroller.lastLine.isEmpty {
+                Text(enroller.lastLine)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(Theme.subtle.opacity(0.8))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            outlineActionButton(label: L10n.agentEnrollButtonCancel, icon: "xmark") {
+                enroller.cancelEnrollment()
+                onChanged()
+            }
+        }
+    }
+
+    private var succeededContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 14))
+                    .foregroundColor(Theme.success)
+                Text(L10n.agentEnrollSucceeded)
+                    .font(.system(size: 12))
+                    .foregroundColor(Theme.detailText.opacity(0.9))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            actionButton(label: L10n.agentEnrollButtonDone, icon: "checkmark", enabled: true) {
+                enroller.reset()
+                onChanged()
+            }
+        }
+    }
+
+    private func failedContent(_ msg: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 13))
+                    .foregroundColor(Theme.error)
+                Text(msg)
+                    .font(.system(size: 11))
+                    .foregroundColor(Theme.error)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            actionButton(label: L10n.agentEnrollButtonRetry, icon: "arrow.clockwise", enabled: isValidServer) {
+                startEnroll()
+            }
+        }
+    }
+
+    private var alreadyConfiguredContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 13))
+                    .foregroundColor(Theme.success)
+                Text(L10n.agentEnrollAlreadyConfigured)
+                    .font(.system(size: 11))
+                    .foregroundColor(Theme.subtle)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            outlineActionButton(label: L10n.agentEnrollButtonReEnroll, icon: "arrow.triangle.2.circlepath") {
+                startEnroll()
+            }
+        }
+    }
+
+    // MARK: Actions
+
+    private func startEnroll() {
+        guard isValidServer else { return }
+        let server = effectiveServer.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = deviceDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        enroller.startEnrollment(
+            serverUrl: server,
+            deviceName: name.isEmpty ? (Host.current().localizedName ?? "Mac") : name
+        ) { _ in
+            // Intent parsed — the Pair-iPhone QR (observing enroller.intent)
+            // re-renders into a dual kind:"both" QR automatically.
+        }
+    }
+
+    // MARK: Field + button helpers (match tab styling)
+
+    private func labeledField(label: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(Theme.subtle)
+            TextField(placeholder, text: text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundColor(Theme.detailText.opacity(0.95))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.fieldFill))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.fieldBorder, lineWidth: 0.5))
+        }
+    }
+
+    private func actionButton(label: String, icon: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 10))
+                Text(label).font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundColor(enabled ? Theme.backgroundInk : Theme.subtle)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 7).fill(enabled ? Theme.accent : Theme.controlFill))
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+    }
+
+    private func outlineActionButton(label: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 10))
+                Text(label).font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundColor(Theme.detailText.opacity(0.85))
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(Theme.controlFill)
+                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.controlBorder, lineWidth: 0.5))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - AutonomousAgentCard (autonomous_agent block editor)
+
+/// Edits the optional `autonomous_agent` block in ~/.mio/agent.json. This is
+/// plain JSON (no Keychain), so we read/merge/write it in place WITHOUT
+/// disturbing any field `mio-agent login` wrote.
+private struct AutonomousAgentCard: View {
+    @ObservedObject private var enroller = MioAgentEnroller.shared
+
+    @State private var block = MioAgentEnroller.AutonomousAgentBlock.defaults
+    @State private var loaded = false
+    @State private var saveMessage: String? = nil
+    @State private var saveIsError = false
+
+    var body: some View {
+        SettingsCard {
+            VStack(alignment: .leading, spacing: 12) {
+                // Enable toggle row
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L10n.agentAutoEnabledLabel)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Theme.detailText.opacity(0.92))
+                        Text(L10n.agentAutoEnabledSublabel)
+                            .font(.system(size: 11))
+                            .foregroundColor(Theme.subtle)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $block.enabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .tint(Theme.accent)
+                }
+
+                if block.enabled {
+                    field(L10n.agentAutoWorkroomLabel, text: $block.workroom_id, mono: true)
+                    field(L10n.agentAutoChannelLabel, text: $block.channel_id, mono: true)
+                    field(L10n.agentAutoHandleLabel, text: $block.handle, mono: false)
+                    HStack(spacing: 8) {
+                        intField(L10n.agentAutoQuietLabel, value: $block.quiet_seconds)
+                        intField(L10n.agentAutoMaxRepliesLabel, value: $block.max_replies_per_window)
+                        intField(L10n.agentAutoWindowLabel, value: $block.window_seconds)
+                    }
+
+                    if !requiredFilled {
+                        Text(L10n.agentAutoRequiresWorkroom)
+                            .font(.system(size: 10))
+                            .foregroundColor(Theme.warning)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Button { save() } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "tray.and.arrow.down.fill").font(.system(size: 10))
+                            Text(L10n.agentAutoSave).font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundColor(saveEnabled ? Theme.backgroundInk : Theme.subtle)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(RoundedRectangle(cornerRadius: 7).fill(saveEnabled ? Theme.accent : Theme.controlFill))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!saveEnabled)
+
+                    Button { clear() } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "trash").font(.system(size: 10))
+                            Text(L10n.agentAutoClear).font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundColor(Theme.detailText.opacity(0.85))
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(Theme.controlFill)
+                                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.controlBorder, lineWidth: 0.5))
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    Spacer()
+                }
+
+                if let msg = saveMessage {
+                    Text(msg)
+                        .font(.system(size: 10))
+                        .foregroundColor(saveIsError ? Theme.error : Theme.subtle)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .onAppear { loadIfNeeded() }
+    }
+
+    private var requiredFilled: Bool {
+        !block.workroom_id.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !block.channel_id.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// Save is allowed when disabling (any state) or when enabling with the
+    /// required identifiers filled in.
+    private var saveEnabled: Bool { !block.enabled || requiredFilled }
+
+    private func loadIfNeeded() {
+        guard !loaded else { return }
+        loaded = true
+        if let existing = (try? enroller.readAutonomousBlock()) ?? nil {
+            block = existing
+        }
+    }
+
+    private func save() {
+        do {
+            try enroller.writeAutonomousBlock(block)
+            saveIsError = false
+            saveMessage = L10n.agentAutoSaved
+        } catch {
+            saveIsError = true
+            saveMessage = error.localizedDescription
+        }
+    }
+
+    private func clear() {
+        do {
+            try enroller.clearAutonomousBlock()
+            block = MioAgentEnroller.AutonomousAgentBlock.defaults
+            saveIsError = false
+            saveMessage = L10n.agentAutoSaved
+        } catch {
+            saveIsError = true
+            saveMessage = error.localizedDescription
+        }
+    }
+
+    private func field(_ label: String, text: Binding<String>, mono: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.system(size: 10, weight: .medium)).foregroundColor(Theme.subtle)
+            TextField("", text: text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12, design: mono ? .monospaced : .default))
+                .foregroundColor(Theme.detailText.opacity(0.95))
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.fieldFill))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.fieldBorder, lineWidth: 0.5))
+        }
+    }
+
+    private func intField(_ label: String, value: Binding<Int>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.system(size: 10, weight: .medium)).foregroundColor(Theme.subtle).lineLimit(1)
+            TextField("", value: value, format: .number)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundColor(Theme.detailText.opacity(0.95))
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.fieldFill))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.fieldBorder, lineWidth: 0.5))
+        }
     }
 }

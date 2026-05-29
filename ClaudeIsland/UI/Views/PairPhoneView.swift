@@ -12,6 +12,60 @@ private func pairPhoneTheme() -> ThemeResolver {
     ThemeResolver(theme: NotchCustomizationStore.shared.customization.theme)
 }
 
+// MARK: - QR payload (R2.7 dual QR)
+
+/// Builds the JSON payload the CodeLight camera parses. A single scan can carry
+/// BOTH the monitoring shortCode AND an enrollment intent so the phone pairs
+/// monitoring AND configures the workspace daemon at once.
+///
+/// Shape (coordinated with the CodeLight camera parser):
+///   {
+///     "server": "<url>",
+///     "code": "<monitoring shortCode>",
+///     "enroll_intent_id": "<uuid>",   // present only when enrolling
+///     "enroll_code": "<opaque>",      // present only when enrolling
+///     "kind": "monitor" | "workspace" | "both"
+///   }
+/// - kind "monitor"   → only the monitoring shortCode is present.
+/// - kind "workspace" → only an enrollment intent is present (no monitoring code).
+/// - kind "both"      → both are present (one scan does everything).
+enum PairQRPayload {
+    static func make(serverUrl: String, shortCode: String?, enrollIntent: MioEnrollIntent?) -> Data? {
+        var payload: [String: String] = ["server": serverUrl]
+
+        let hasMonitor = !(shortCode ?? "").isEmpty
+        if hasMonitor { payload["code"] = shortCode! }
+
+        if let enroll = enrollIntent {
+            payload["enroll_intent_id"] = enroll.intentId
+            payload["enroll_code"] = enroll.opaqueCode
+        }
+
+        let kind: String
+        switch (hasMonitor, enrollIntent != nil) {
+        case (true, true):  kind = "both"
+        case (false, true): kind = "workspace"
+        default:            kind = "monitor"
+        }
+        payload["kind"] = kind
+
+        return try? JSONSerialization.data(withJSONObject: payload)
+    }
+
+    /// Render `payload` JSON into a crisp, scannable QR NSImage.
+    static func qrImage(from payload: Data) -> NSImage? {
+        guard let jsonString = String(data: payload, encoding: .utf8) else { return nil }
+        let context = CIContext()
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(jsonString.utf8)
+        filter.correctionLevel = "M"
+        guard let outputImage = filter.outputImage else { return nil }
+        let scaled = outputImage.transformed(by: CGAffineTransform(scaleX: 10, y: 10))
+        guard let cgImage = context.createCGImage(scaled, from: scaled.extent) else { return nil }
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+    }
+}
+
 // MARK: - Menu Row (inside NotchMenuView)
 
 struct PairPhoneRow: View {
@@ -138,6 +192,9 @@ final class QRPairingWindow {
 private struct QRPairingContentView: View {
     let onClose: () -> Void
     @ObservedObject private var syncManager = SyncManager.shared
+    /// Observe the enroller so the QR re-renders into a dual (kind:"both") QR
+    /// the moment an in-app `mio-agent login` parses its enrollment intent.
+    @ObservedObject private var enroller = MioAgentEnroller.shared
     @State private var qrImage: NSImage?
     @State private var deviceName = Host.current().localizedName ?? "Mac"
     @State private var isHoveringClose = false
@@ -206,6 +263,9 @@ private struct QRPairingContentView: View {
             Task { await refreshLinkedDevices() }
         }
         .onChange(of: shortCode) { _, _ in
+            generateQRCode()
+        }
+        .onChange(of: enroller.intent) { _, _ in
             generateQRCode()
         }
     }
@@ -488,29 +548,15 @@ private struct QRPairingContentView: View {
             qrImage = nil
             return
         }
-        // New payload format: {server, code}. iPhone parses these and calls
-        // POST /v1/pairing/code/redeem.
-        let payload: [String: String] = [
-            "server": url,
-            "code": shortCode ?? "",
-        ]
-
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload),
-              let jsonString = String(data: jsonData, encoding: .utf8) else { return }
-
-        let context = CIContext()
-        let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(jsonString.utf8)
-        filter.correctionLevel = "M"
-
-        guard let outputImage = filter.outputImage else { return }
-
-        let scale = CGAffineTransform(scaleX: 10, y: 10)
-        let scaledImage = outputImage.transformed(by: scale)
-
-        guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else { return }
-
-        qrImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        // R2.7 dual QR: embed the monitoring shortCode AND (when an in-app
+        // enrollment is in flight) the enrollment intent the daemon is polling,
+        // so one scan does both. kind reflects which parts are present.
+        guard let payload = PairQRPayload.make(
+            serverUrl: url,
+            shortCode: shortCode,
+            enrollIntent: enroller.intent
+        ) else { return }
+        qrImage = PairQRPayload.qrImage(from: payload)
     }
 }
 
@@ -523,6 +569,7 @@ private struct QRPairingContentView: View {
 
 struct PairPhonePanelView: View {
     @ObservedObject private var syncManager = SyncManager.shared
+    @ObservedObject private var enroller = MioAgentEnroller.shared
     @State private var serverDraft = ""
     @State private var isSavingServer = false
     @State private var isEditingServer = false
@@ -570,6 +617,7 @@ struct PairPhonePanelView: View {
             Task { await refreshLinkedDevices() }
         }
         .onChange(of: shortCode) { _, _ in generateQRCode() }
+        .onChange(of: enroller.intent) { _, _ in generateQRCode() }
         .onChange(of: syncManager.connectionState) { _, _ in
             Task { await refreshLinkedDevices() }
         }
@@ -961,20 +1009,12 @@ struct PairPhonePanelView: View {
             qrImage = nil
             return
         }
-        let payload: [String: String] = [
-            "server": url,
-            "code": shortCode ?? "",
-        ]
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload),
-              let jsonString = String(data: jsonData, encoding: .utf8) else { return }
-
-        let context = CIContext()
-        let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(jsonString.utf8)
-        filter.correctionLevel = "M"
-        guard let outputImage = filter.outputImage else { return }
-        let scaled = outputImage.transformed(by: CGAffineTransform(scaleX: 10, y: 10))
-        guard let cgImage = context.createCGImage(scaled, from: scaled.extent) else { return }
-        qrImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        // R2.7 dual QR — see QRPairingContentView.generateQRCode for the contract.
+        guard let payload = PairQRPayload.make(
+            serverUrl: url,
+            shortCode: shortCode,
+            enrollIntent: enroller.intent
+        ) else { return }
+        qrImage = PairQRPayload.qrImage(from: payload)
     }
 }
