@@ -31,15 +31,33 @@ struct CmuxTreeParser {
     /// the pane in one AppleScript call.
     @discardableResult
     static func jump(cwd: String) async -> Bool {
+        // Normalize so a trailing slash / "." / ".." doesn't defeat the match
+        // (cmux reports a canonical path; the session cwd may not be).
+        let normalized = normalizedPath(cwd)
+        // Guard with `count` instead of `first terminal whose …`: the old form
+        // threw `-1719 Invalid index` whenever NO pane currently had that cwd
+        // (pane closed, cd'd away, path mismatch) — that's exactly the failure
+        // in issue #62. Returning a sentinel lets the caller fall back cleanly.
         let script = """
         tell application "cmux"
-            set targetTerm to (first terminal whose working directory is "\(escapeAS(cwd))")
-            focus targetTerm
+            set matches to (every terminal whose working directory is "\(escapeAS(normalized))")
+            if (count of matches) is 0 then return "none"
+            focus (item 1 of matches)
+            return "ok"
         end tell
         """
-        let ok = await runASAsync(script).isSuccess
-        DebugLogger.log("Cmux", "focus terminal cwd=\"\(cwd)\" ok=\(ok)")
+        let result = (await runASAsync(script).output)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ok = (result == "ok")
+        DebugLogger.log("Cmux", "focus terminal cwd=\"\(normalized)\" ok=\(ok) result=\(result ?? "nil")")
         return ok
+    }
+
+    /// Canonicalize a filesystem path for matching against cmux's reported
+    /// `working directory` — strips trailing slashes and resolves `.`/`..`.
+    /// (Symlinks are intentionally left unresolved: cmux reports the path the
+    /// shell is actually in, which may itself be a symlink.)
+    private static func normalizedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.path
     }
 
     /// Focus a terminal by its UUID (from session JSON panel id).

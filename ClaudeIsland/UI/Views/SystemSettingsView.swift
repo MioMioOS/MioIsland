@@ -1549,7 +1549,9 @@ private struct CmuxConnectionTab: View {
                     icon: "terminal.fill",
                     title: L10n.cmuxBinaryRow,
                     ok: probe?.cmuxBinaryInstalled ?? false,
-                    detail: (probe?.cmuxBinaryInstalled ?? false) ? L10n.cmuxBinaryFound : L10n.cmuxBinaryMissing
+                    detail: (probe?.cmuxBinaryInstalled ?? false)
+                        ? (probe?.cmuxBinaryPath ?? L10n.cmuxBinaryFound)
+                        : L10n.cmuxBinaryMissing
                 )
                 statusRow(
                     icon: "accessibility",
