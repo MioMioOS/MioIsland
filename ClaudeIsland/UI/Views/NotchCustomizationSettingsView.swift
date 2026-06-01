@@ -284,6 +284,7 @@ struct NotchCustomizationSettingsView: View {
         case .alert: return L10n.usageBarModeAlert
         case .compact: return L10n.usageBarModeCompact
         case .time: return L10n.usageBarModeTime
+        case .tokens: return L10n.usageBarModeTokens
         }
     }
 
@@ -293,6 +294,7 @@ struct NotchCustomizationSettingsView: View {
         case .alert: return L10n.usageBarModeAlertDescription
         case .compact: return L10n.usageBarModeCompactDescription
         case .time: return L10n.usageBarModeTimeDescription
+        case .tokens: return L10n.usageBarModeTokensDescription
         }
     }
 

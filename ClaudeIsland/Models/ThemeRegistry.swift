@@ -131,12 +131,12 @@ final class ThemeRegistry: ObservableObject {
             previewIdleLabelZH: "空闲",
             prefersUppercasePreviewLabel: false,
             tokens: ThemeTokens(
-                chrome: .init(background: .init(hex: "000000"), overlay: .init(hex: "1A1A1A"), border: .init(hex: "2A2A2A")),
-                text: .init(primary: .white, secondary: .init(hex: "FFFFFF"), muted: .init(hex: "9A9A9A"), inverse: .black),
-                status: .init(idle: .init(hex: "CAFF00"), working: .init(hex: "66E8F8"), needsYou: .init(hex: "F59E0B"), error: .init(hex: "EF4444"), done: .init(hex: "4ADE80"), thinking: .init(hex: "A78BFA")),
-                badges: .init(agentText: .init(hex: "60A5FA"), agentFill: .init(hex: "1E3A8A"), terminalText: .init(hex: "93C5FD"), terminalFill: .init(hex: "1E3A8A"), subduedText: .init(hex: "FFFFFF"), subduedFill: .init(hex: "262626")),
-                usage: .init(text: .init(hex: "FFFFFF"), track: .init(hex: "2A2A2A"), fill: .init(hex: "4ADE80"), border: .init(hex: "2A2A2A")),
-                chat: .init(bodyText: .white, secondaryText: .init(hex: "D1D5DB"), bubbleText: .white, bubbleFill: .init(hex: "2F2F2F"), assistantDot: .init(hex: "FFFFFF"))
+                chrome: .init(background: .init(hex: "0A0A0B"), overlay: .init(hex: "191919"), border: .init(hex: "2A2A2C")),
+                text: .init(primary: .init(hex: "EDEDEE"), secondary: .init(hex: "C7C7CB"), muted: .init(hex: "8B8B90"), inverse: .init(hex: "0A0A0B")),
+                status: .init(idle: .init(hex: "CCFF00"), working: .init(hex: "67E8F9"), needsYou: .init(hex: "FBBF24"), error: .init(hex: "F87171"), done: .init(hex: "4ADE80"), thinking: .init(hex: "B794F6")),
+                badges: .init(agentText: .init(hex: "7DB4FF"), agentFill: .init(hex: "1E3A8A"), terminalText: .init(hex: "A8CBFF"), terminalFill: .init(hex: "1E3A8A"), subduedText: .init(hex: "E8E8EA"), subduedFill: .init(hex: "242428")),
+                usage: .init(text: .init(hex: "F4F4F5"), track: .init(hex: "26262A"), fill: .init(hex: "A3E635"), border: .init(hex: "2A2A2C")),
+                chat: .init(bodyText: .init(hex: "EDEDEE"), secondaryText: .init(hex: "B8B8BD"), bubbleText: .init(hex: "F4F4F5"), bubbleFill: .init(hex: "2E2E32"), assistantDot: .init(hex: "EDEDEE"))
             ),
             source: .builtIn
         ),
@@ -147,12 +147,12 @@ final class ThemeRegistry: ObservableObject {
             previewIdleLabelZH: "空闲",
             prefersUppercasePreviewLabel: false,
             tokens: ThemeTokens(
-                chrome: .init(background: .init(hex: "0D1F14"), overlay: .init(hex: "163020"), border: .init(hex: "294534")),
-                text: .init(primary: .init(hex: "E8F5E9"), secondary: .init(hex: "B8D0BE"), muted: .init(hex: "8BA896"), inverse: .black),
-                status: .init(idle: .init(hex: "7CC85A"), working: .init(hex: "66E8F8"), needsYou: .init(hex: "F59E0B"), error: .init(hex: "EF4444"), done: .init(hex: "4ADE80"), thinking: .init(hex: "A78BFA")),
-                badges: .init(agentText: .init(hex: "CFE9D7"), agentFill: .init(hex: "23422E"), terminalText: .init(hex: "A8DAB7"), terminalFill: .init(hex: "1B3525"), subduedText: .init(hex: "D5E6DA"), subduedFill: .init(hex: "1B3525")),
-                usage: .init(text: .init(hex: "DCEFE1"), track: .init(hex: "284033"), fill: .init(hex: "7CC85A"), border: .init(hex: "284033")),
-                chat: .init(bodyText: .init(hex: "E8F5E9"), secondaryText: .init(hex: "B8D0BE"), bubbleText: .init(hex: "E8F5E9"), bubbleFill: .init(hex: "23422E"), assistantDot: .init(hex: "CFE9D7"))
+                chrome: .init(background: .init(hex: "0A1C12"), overlay: .init(hex: "122B1C"), border: .init(hex: "2B4A37")),
+                text: .init(primary: .init(hex: "EAF6EB"), secondary: .init(hex: "B9D3C0"), muted: .init(hex: "8DAC98"), inverse: .init(hex: "07120B")),
+                status: .init(idle: .init(hex: "86D957"), working: .init(hex: "5BE0D8"), needsYou: .init(hex: "F5A524"), error: .init(hex: "F0584F"), done: .init(hex: "50DF82"), thinking: .init(hex: "A78BFA")),
+                badges: .init(agentText: .init(hex: "D4ECDB"), agentFill: .init(hex: "224A30"), terminalText: .init(hex: "A9DEB8"), terminalFill: .init(hex: "173220"), subduedText: .init(hex: "D7E8DC"), subduedFill: .init(hex: "173220")),
+                usage: .init(text: .init(hex: "DDEFE2"), track: .init(hex: "2A4937"), fill: .init(hex: "86D957"), border: .init(hex: "2A4937")),
+                chat: .init(bodyText: .init(hex: "EAF6EB"), secondaryText: .init(hex: "B9D3C0"), bubbleText: .init(hex: "EAF6EB"), bubbleFill: .init(hex: "224A30"), assistantDot: .init(hex: "D4ECDB"))
             ),
             source: .builtIn
         ),
@@ -163,12 +163,12 @@ final class ThemeRegistry: ObservableObject {
             previewIdleLabelZH: "IDLE_",
             prefersUppercasePreviewLabel: true,
             tokens: ThemeTokens(
-                chrome: .init(background: .init(hex: "070B1A"), overlay: .init(hex: "111A38"), border: .init(hex: "1D2A59")),
-                text: .init(primary: .init(hex: "F7F3FF"), secondary: .init(hex: "C7B6F8"), muted: .init(hex: "7DA6D9"), inverse: .black),
-                status: .init(idle: .init(hex: "FF2FAE"), working: .init(hex: "00E5FF"), needsYou: .init(hex: "FFB703"), error: .init(hex: "FF4D6D"), done: .init(hex: "C084FC"), thinking: .init(hex: "7C3AED")),
-                badges: .init(agentText: .init(hex: "FF7AC8"), agentFill: .init(hex: "2A1144"), terminalText: .init(hex: "6CF2FF"), terminalFill: .init(hex: "0D2C45"), subduedText: .init(hex: "D8CCFF"), subduedFill: .init(hex: "151F46")),
-                usage: .init(text: .init(hex: "E8DEFF"), track: .init(hex: "162347"), fill: .init(hex: "FF2FAE"), border: .init(hex: "24356A")),
-                chat: .init(bodyText: .init(hex: "F7F3FF"), secondaryText: .init(hex: "C7B6F8"), bubbleText: .init(hex: "F7F3FF"), bubbleFill: .init(hex: "141D3D"), assistantDot: .init(hex: "00E5FF"))
+                chrome: .init(background: .init(hex: "04060F"), overlay: .init(hex: "0E1530"), border: .init(hex: "23306B")),
+                text: .init(primary: .init(hex: "F8F4FF"), secondary: .init(hex: "C9B8FF"), muted: .init(hex: "7FA8E0"), inverse: .init(hex: "000000")),
+                status: .init(idle: .init(hex: "FF1FB0"), working: .init(hex: "1FF0FF"), needsYou: .init(hex: "FFB300"), error: .init(hex: "FF3D5E"), done: .init(hex: "5CF2C0"), thinking: .init(hex: "A36BFF")),
+                badges: .init(agentText: .init(hex: "FF8FD4"), agentFill: .init(hex: "2B0F4A"), terminalText: .init(hex: "7DF6FF"), terminalFill: .init(hex: "06304C"), subduedText: .init(hex: "DCD0FF"), subduedFill: .init(hex: "141F4A")),
+                usage: .init(text: .init(hex: "EBE2FF"), track: .init(hex: "17244A"), fill: .init(hex: "FF1FB0"), border: .init(hex: "2A3D78")),
+                chat: .init(bodyText: .init(hex: "F8F4FF"), secondaryText: .init(hex: "C9B8FF"), bubbleText: .init(hex: "F8F4FF"), bubbleFill: .init(hex: "121A3D"), assistantDot: .init(hex: "1FF0FF"))
             ),
             source: .builtIn
         ),
@@ -179,12 +179,12 @@ final class ThemeRegistry: ObservableObject {
             previewIdleLabelZH: "静候",
             prefersUppercasePreviewLabel: false,
             tokens: ThemeTokens(
-                chrome: .init(background: .init(hex: "FFF4E8"), overlay: .init(hex: "F6E6D3"), border: .init(hex: "E8D1BD")),
-                text: .init(primary: .init(hex: "4A2618"), secondary: .init(hex: "6D4330"), muted: .init(hex: "A06850"), inverse: .white),
-                status: .init(idle: .init(hex: "E8552A"), working: .init(hex: "0F766E"), needsYou: .init(hex: "B45309"), error: .init(hex: "B91C1C"), done: .init(hex: "15803D"), thinking: .init(hex: "7C3AED")),
-                badges: .init(agentText: .init(hex: "7C2D12"), agentFill: .init(hex: "F7D7BF"), terminalText: .init(hex: "5B4636"), terminalFill: .init(hex: "F1DECF"), subduedText: .init(hex: "5B4636"), subduedFill: .init(hex: "F1DECF")),
-                usage: .init(text: .init(hex: "4A2618"), track: .init(hex: "E8D1BD"), fill: .init(hex: "E8552A"), border: .init(hex: "E8D1BD")),
-                chat: .init(bodyText: .init(hex: "4A2618"), secondaryText: .init(hex: "6D4330"), bubbleText: .init(hex: "4A2618"), bubbleFill: .init(hex: "F6E6D3"), assistantDot: .init(hex: "4A2618"))
+                chrome: .init(background: .init(hex: "FFEFDC"), overlay: .init(hex: "FBE0C6"), border: .init(hex: "EDC9A8")),
+                text: .init(primary: .init(hex: "47210F"), secondary: .init(hex: "6B3C25"), muted: .init(hex: "9C5E3F"), inverse: .init(hex: "FFFFFF")),
+                status: .init(idle: .init(hex: "D9491E"), working: .init(hex: "0E7C6E"), needsYou: .init(hex: "A85A06"), error: .init(hex: "AE1A1A"), done: .init(hex: "197A38"), thinking: .init(hex: "8B3FD6")),
+                badges: .init(agentText: .init(hex: "7A2E10"), agentFill: .init(hex: "FAD2B0"), terminalText: .init(hex: "53382A"), terminalFill: .init(hex: "F4DBC4"), subduedText: .init(hex: "53382A"), subduedFill: .init(hex: "F4DBC4")),
+                usage: .init(text: .init(hex: "47210F"), track: .init(hex: "EDC9A8"), fill: .init(hex: "D9491E"), border: .init(hex: "EDC9A8")),
+                chat: .init(bodyText: .init(hex: "47210F"), secondaryText: .init(hex: "6B3C25"), bubbleText: .init(hex: "47210F"), bubbleFill: .init(hex: "FBE0C6"), assistantDot: .init(hex: "D9491E"))
             ),
             source: .builtIn
         ),
@@ -195,12 +195,12 @@ final class ThemeRegistry: ObservableObject {
             previewIdleLabelZH: "IDLE",
             prefersUppercasePreviewLabel: true,
             tokens: ThemeTokens(
-                chrome: .init(background: .init(hex: "10B981"), overlay: .init(hex: "6EE7B7"), border: .init(hex: "065F46")),
-                text: .init(primary: .black, secondary: .black, muted: .black, inverse: .white),
-                status: .init(idle: .init(hex: "064E3B"), working: .init(hex: "065F46"), needsYou: .init(hex: "92400E"), error: .init(hex: "991B1B"), done: .init(hex: "14532D"), thinking: .init(hex: "312E81")),
-                badges: .init(agentText: .black, agentFill: .init(hex: "A7F3D0"), terminalText: .black, terminalFill: .init(hex: "6EE7B7"), subduedText: .black, subduedFill: .init(hex: "86EFAC")),
-                usage: .init(text: .black, track: .init(hex: "A7F3D0"), fill: .init(hex: "064E3B"), border: .init(hex: "065F46")),
-                chat: .init(bodyText: .black, secondaryText: .black, bubbleText: .black, bubbleFill: .init(hex: "A7F3D0"), assistantDot: .init(hex: "064E3B"))
+                chrome: .init(background: .init(hex: "34C77B"), overlay: .init(hex: "6FE0A8"), border: .init(hex: "0B5138")),
+                text: .init(primary: .init(hex: "0C2E1E"), secondary: .init(hex: "124A30"), muted: .init(hex: "18583A"), inverse: .init(hex: "FFFFFF")),
+                status: .init(idle: .init(hex: "064E3B"), working: .init(hex: "0B5138"), needsYou: .init(hex: "8A4B0E"), error: .init(hex: "A01818"), done: .init(hex: "117A3D"), thinking: .init(hex: "3B2E91")),
+                badges: .init(agentText: .init(hex: "0C2E1E"), agentFill: .init(hex: "9DEFC4"), terminalText: .init(hex: "0C2E1E"), terminalFill: .init(hex: "6FE0A8"), subduedText: .init(hex: "0C2E1E"), subduedFill: .init(hex: "7FE8B4")),
+                usage: .init(text: .init(hex: "0C2E1E"), track: .init(hex: "9DEFC4"), fill: .init(hex: "064E3B"), border: .init(hex: "0B5138")),
+                chat: .init(bodyText: .init(hex: "0C2E1E"), secondaryText: .init(hex: "124A30"), bubbleText: .init(hex: "0C2E1E"), bubbleFill: .init(hex: "9DEFC4"), assistantDot: .init(hex: "064E3B"))
             ),
             source: .builtIn
         ),
@@ -211,12 +211,12 @@ final class ThemeRegistry: ObservableObject {
             previewIdleLabelZH: "空闲",
             prefersUppercasePreviewLabel: false,
             tokens: ThemeTokens(
-                chrome: .init(background: .init(hex: "000000"), overlay: .init(hex: "111111"), border: .init(hex: "FFFFFF")),
-                text: .init(primary: .white, secondary: .white, muted: .white, inverse: .black),
-                status: .init(idle: .init(hex: "FFE600"), working: .init(hex: "66E8F8"), needsYou: .init(hex: "FFE600"), error: .init(hex: "FF4D4D"), done: .init(hex: "4ADE80"), thinking: .init(hex: "A78BFA")),
-                badges: .init(agentText: .white, agentFill: .init(hex: "000000"), terminalText: .white, terminalFill: .init(hex: "000000"), subduedText: .white, subduedFill: .init(hex: "000000")),
-                usage: .init(text: .white, track: .init(hex: "333333"), fill: .init(hex: "FFE600"), border: .white),
-                chat: .init(bodyText: .white, secondaryText: .white, bubbleText: .white, bubbleFill: .init(hex: "111111"), assistantDot: .white)
+                chrome: .init(background: .init(hex: "000000"), overlay: .init(hex: "121212"), border: .init(hex: "FFFFFF")),
+                text: .init(primary: .init(hex: "FFFFFF"), secondary: .init(hex: "E6E6E6"), muted: .init(hex: "BFBFBF"), inverse: .init(hex: "000000")),
+                status: .init(idle: .init(hex: "FFD400"), working: .init(hex: "5EE7F5"), needsYou: .init(hex: "FFA51F"), error: .init(hex: "FF5C57"), done: .init(hex: "3DE07A"), thinking: .init(hex: "B695FF")),
+                badges: .init(agentText: .init(hex: "FFFFFF"), agentFill: .init(hex: "000000"), terminalText: .init(hex: "FFFFFF"), terminalFill: .init(hex: "000000"), subduedText: .init(hex: "FFFFFF"), subduedFill: .init(hex: "000000")),
+                usage: .init(text: .init(hex: "FFFFFF"), track: .init(hex: "333333"), fill: .init(hex: "FFD400"), border: .init(hex: "FFFFFF")),
+                chat: .init(bodyText: .init(hex: "FFFFFF"), secondaryText: .init(hex: "C9C9C9"), bubbleText: .init(hex: "FFFFFF"), bubbleFill: .init(hex: "161616"), assistantDot: .init(hex: "FFD400"))
             ),
             source: .builtIn
         ),
@@ -227,12 +227,28 @@ final class ThemeRegistry: ObservableObject {
             previewIdleLabelZH: "小憩",
             prefersUppercasePreviewLabel: false,
             tokens: ThemeTokens(
-                chrome: .init(background: .init(hex: "FFF4FB"), overlay: .init(hex: "FFE3F2"), border: .init(hex: "F6BDD9")),
-                text: .init(primary: .init(hex: "7A3558"), secondary: .init(hex: "A2557D"), muted: .init(hex: "C27AA1"), inverse: .white),
-                status: .init(idle: .init(hex: "F472B6"), working: .init(hex: "F9A8D4"), needsYou: .init(hex: "FB7185"), error: .init(hex: "E11D48"), done: .init(hex: "EC4899"), thinking: .init(hex: "C084FC")),
-                badges: .init(agentText: .init(hex: "8F3A66"), agentFill: .init(hex: "FFD6EB"), terminalText: .init(hex: "7A3558"), terminalFill: .init(hex: "FFF0F8"), subduedText: .init(hex: "7A3558"), subduedFill: .init(hex: "FFE7F4")),
-                usage: .init(text: .init(hex: "7A3558"), track: .init(hex: "FAD7E8"), fill: .init(hex: "F472B6"), border: .init(hex: "F3B7D2")),
-                chat: .init(bodyText: .init(hex: "7A3558"), secondaryText: .init(hex: "A2557D"), bubbleText: .init(hex: "7A3558"), bubbleFill: .init(hex: "FFF0F8"), assistantDot: .init(hex: "C2417A"))
+                chrome: .init(background: .init(hex: "FDF2F8"), overlay: .init(hex: "FCE0EE"), border: .init(hex: "F3BBD6")),
+                text: .init(primary: .init(hex: "6E2C4E"), secondary: .init(hex: "9A4A74"), muted: .init(hex: "B06A92"), inverse: .init(hex: "FFFFFF")),
+                status: .init(idle: .init(hex: "DB2777"), working: .init(hex: "F9A8D4"), needsYou: .init(hex: "D98324"), error: .init(hex: "D6395C"), done: .init(hex: "2E9E6E"), thinking: .init(hex: "B266E0")),
+                badges: .init(agentText: .init(hex: "8A2F5C"), agentFill: .init(hex: "FBD0E6"), terminalText: .init(hex: "6E2C4E"), terminalFill: .init(hex: "FDEAF4"), subduedText: .init(hex: "6E2C4E"), subduedFill: .init(hex: "FBE2F0")),
+                usage: .init(text: .init(hex: "6E2C4E"), track: .init(hex: "F7C9DF"), fill: .init(hex: "DB2777"), border: .init(hex: "F0B4D0")),
+                chat: .init(bodyText: .init(hex: "6E2C4E"), secondaryText: .init(hex: "9A4A74"), bubbleText: .init(hex: "6E2C4E"), bubbleFill: .init(hex: "FDEAF4"), assistantDot: .init(hex: "DB2777"))
+            ),
+            source: .builtIn
+        ),
+        ThemeDescriptor(
+            id: .catppuccin,
+            fallbackDisplayName: "Catppuccin",
+            previewIdleLabelEN: "purring",
+            previewIdleLabelZH: "打盹",
+            prefersUppercasePreviewLabel: false,
+            tokens: ThemeTokens(
+                chrome: .init(background: .init(hex: "1E1E2E"), overlay: .init(hex: "313244"), border: .init(hex: "45475A")),
+                text: .init(primary: .init(hex: "CDD6F4"), secondary: .init(hex: "BAC2DE"), muted: .init(hex: "7F849C"), inverse: .init(hex: "11111B")),
+                status: .init(idle: .init(hex: "CBA6F7"), working: .init(hex: "89DCEB"), needsYou: .init(hex: "FAB387"), error: .init(hex: "F38BA8"), done: .init(hex: "A6E3A1"), thinking: .init(hex: "B4BEFE")),
+                badges: .init(agentText: .init(hex: "89B4FA"), agentFill: .init(hex: "313244"), terminalText: .init(hex: "94E2D5"), terminalFill: .init(hex: "313244"), subduedText: .init(hex: "A6ADC8"), subduedFill: .init(hex: "45475A")),
+                usage: .init(text: .init(hex: "CDD6F4"), track: .init(hex: "45475A"), fill: .init(hex: "A6E3A1"), border: .init(hex: "45475A")),
+                chat: .init(bodyText: .init(hex: "CDD6F4"), secondaryText: .init(hex: "BAC2DE"), bubbleText: .init(hex: "CDD6F4"), bubbleFill: .init(hex: "313244"), assistantDot: .init(hex: "CBA6F7"))
             ),
             source: .builtIn
         ),

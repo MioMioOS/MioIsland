@@ -207,6 +207,7 @@ struct NotchThemeID: RawRepresentable, Codable, Hashable, Identifiable {
     static let retroArcade = NotchThemeID(rawValue: "retroArcade")
     static let highContrast = NotchThemeID(rawValue: "highContrast")
     static let sakura = NotchThemeID(rawValue: "sakura")
+    static let catppuccin = NotchThemeID(rawValue: "catppuccin")
 }
 
 /// Four-step relative font scale. String raw values for stable
@@ -255,11 +256,19 @@ enum HardwareNotchMode: String, Codable {
 ///   reset time hint. Information-dense, low-attention.
 /// - `time`: emphasize remaining time before reset, with a small ring
 ///   showing the percentage.
+/// - `tokens`: a different DATA SOURCE entirely — instead of the plan
+///   rate-limit %, show today's actual token consumption read from the local
+///   CLI transcripts (~/.claude + ~/.codex), aggregated across all models.
+///   Works even when the plan % reads 0% (Spark / proxied / third-party relay),
+///   because token counts come from the local transcript, not the rate-limit
+///   API. When selected, a single unified bar replaces the per-provider plan
+///   bars. See TokenUsage.swift.
 enum UsageBarDisplayMode: String, Codable, CaseIterable, Identifiable {
     case auto
     case alert
     case compact
     case time
+    case tokens
 
     var id: String { rawValue }
 }
