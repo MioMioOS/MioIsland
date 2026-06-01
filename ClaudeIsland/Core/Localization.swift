@@ -646,6 +646,7 @@ enum L10n {
     static var notchThemeRetroArcade: String { tr("Retro Arcade", "复古游戏机") }
     static var notchThemeHighContrast: String { tr("High Contrast", "高对比") }
     static var notchThemeSakura: String { tr("Pink Mist", "粉雾") }
+    static var notchThemeCatppuccin: String { tr("Catppuccin", "Catppuccin") }
     static var notchHoverSpeed: String { tr("Hover Speed", "展开速度") }
     static var notchHoverInstant: String { tr("Fast", "即时") }
     static var notchHoverNormal: String { tr("1s", "1秒") }
@@ -668,6 +669,7 @@ enum L10n {
     static var usageBarModeAlert: String { tr("Alert", "警戒") }
     static var usageBarModeCompact: String { tr("Compact", "紧凑") }
     static var usageBarModeTime: String { tr("Time", "时间") }
+    static var usageBarModeTokens: String { tr("Tokens", "Token") }
     static var usageBarModeAutoDescription: String {
         tr("< 60% Compact · ≥ 60% Alert · ≥ 80% Red Pulse",
            "< 60% 紧凑 · ≥ 60% 警戒 · ≥ 80% 红色脉冲")
@@ -680,6 +682,22 @@ enum L10n {
     }
     static var usageBarModeTimeDescription: String {
         tr("Emphasize remaining time + ring", "突出剩余时间 + 环形")
+    }
+    static var usageBarModeTokensDescription: String {
+        tr("Today's real token use, all models — works even at 0% plan",
+           "今日真实 token 消耗（全模型）· plan 显示 0% 也能看")
+    }
+
+    // Token usage bar
+    static var usageBarTokensToday: String { tr("TODAY", "今日") }
+    static func usageBarTokensCached(_ n: String) -> String {
+        tr("\(n) cached", "\(n) 缓存")
+    }
+    static func usageBarTokensMore(_ n: Int) -> String {
+        tr("+\(n) more models", "另 \(n) 个模型")
+    }
+    static var usageBarTokensEmpty: String {
+        tr("No token activity today", "今日暂无 token 记录")
     }
 
     // Per-provider sub-toggles
@@ -713,6 +731,7 @@ enum L10n {
         case NotchThemeID.retroArcade.rawValue: return notchThemeRetroArcade
         case NotchThemeID.highContrast.rawValue: return notchThemeHighContrast
         case NotchThemeID.sakura.rawValue: return notchThemeSakura
+        case NotchThemeID.catppuccin.rawValue: return notchThemeCatppuccin
         default: return ThemeRegistry.shared.displayName(for: id)
         }
     }

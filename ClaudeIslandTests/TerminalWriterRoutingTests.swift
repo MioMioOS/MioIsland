@@ -58,13 +58,30 @@ final class TerminalWriterRoutingTests: XCTestCase {
         XCTAssertEqual(plan, .appendReturn("OK\r"))
     }
 
-    func test_codexFallsBackToInlineReturnWithoutSurface() {
+    /// Regression: Codex's raw-mode TUI only submits on a real Enter KEY event;
+    /// an inline `\r` is a literal newline in its composer and strands the text
+    /// unsent. So Codex must use send-then-key even when no surface was
+    /// resolved (`cmux send-key` defaults to the workspace's active surface).
+    /// Previously this returned `.appendReturn("OK\r")` — that was the bug.
+    func test_codexUsesSeparateEnterKeyEvenWithoutSurface() {
         let plan = TerminalWriter.cmuxSubmissionPlan(
             text: "OK",
             terminalApp: "Codex",
             hasSurfaceTarget: false
         )
 
-        XCTAssertEqual(plan, .appendReturn("OK\r"))
+        XCTAssertEqual(plan, .sendThenKey(text: "OK", key: "enter"))
+    }
+
+    /// terminalApp matching is case- and whitespace-insensitive, so a "codex"
+    /// hint from any source still gets the key-event submit path.
+    func test_codexMatchIsCaseAndWhitespaceInsensitive() {
+        let plan = TerminalWriter.cmuxSubmissionPlan(
+            text: "hi",
+            terminalApp: "  codex ",
+            hasSurfaceTarget: false
+        )
+
+        XCTAssertEqual(plan, .sendThenKey(text: "hi", key: "enter"))
     }
 }

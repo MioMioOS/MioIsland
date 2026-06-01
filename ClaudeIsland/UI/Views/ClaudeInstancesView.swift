@@ -88,9 +88,15 @@ struct ClaudeInstancesView: View {
                             .buttonStyle(.plain)
                         }
 
-                        if notchStore.customization.showUsageBar
-                            && notchStore.customization.showClaudeUsageBar {
-                            UsageStatsBar(monitor: rateLimitMonitor, totalMinutes: totalSessionMinutes)
+                        if notchStore.customization.showUsageBar {
+                            // Tokens mode shows ONE unified cross-model bar
+                            // (replacing both plan bars). Otherwise the Claude
+                            // plan-% bar, gated on its sub-toggle.
+                            if notchStore.customization.usageBarDisplayMode == .tokens {
+                                TokenUsageStatsBar(monitor: tokenUsageMonitor)
+                            } else if notchStore.customization.showClaudeUsageBar {
+                                UsageStatsBar(monitor: rateLimitMonitor, totalMinutes: totalSessionMinutes)
+                            }
                         }
                     }
                     .padding(.trailing, 4)
@@ -99,9 +105,11 @@ struct ClaudeInstancesView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
 
-                // Bottom left: Codex usage stats
+                // Bottom left: Codex usage stats (hidden in tokens mode — the
+                // unified token bar already covers Codex)
                 if codexGate.isEnabled && !showBuddyCard && !(sortedInstances.count > 4 && viewModel.isInstancesExpanded)
                     && notchStore.customization.showUsageBar
+                    && notchStore.customization.usageBarDisplayMode != .tokens
                     && notchStore.customization.showCodexUsageBar {
                     VStack(alignment: .leading, spacing: 4) {
                         Spacer()
@@ -125,26 +133,32 @@ struct ClaudeInstancesView: View {
             // hit api.anthropic.com every 5 minutes. See issue #50.
             // Also gate on the Claude sub-toggle so users who only want Codex
             // shown don't pay the Claude API poll cost.
-            .onAppear {
-                if notchStore.customization.showUsageBar
-                    && notchStore.customization.showClaudeUsageBar {
-                    rateLimitMonitor.start()
-                }
-            }
-            .onChange(of: notchStore.customization.showUsageBar) { _, newValue in
-                if newValue && notchStore.customization.showClaudeUsageBar {
-                    rateLimitMonitor.start()
-                } else {
-                    rateLimitMonitor.stop()
-                }
-            }
-            .onChange(of: notchStore.customization.showClaudeUsageBar) { _, newValue in
-                if newValue && notchStore.customization.showUsageBar {
-                    rateLimitMonitor.start()
-                } else {
-                    rateLimitMonitor.stop()
-                }
-            }
+            .onAppear { syncUsageMonitors() }
+            .onChange(of: notchStore.customization.showUsageBar) { _, _ in syncUsageMonitors() }
+            .onChange(of: notchStore.customization.showClaudeUsageBar) { _, _ in syncUsageMonitors() }
+            .onChange(of: notchStore.customization.usageBarDisplayMode) { _, _ in syncUsageMonitors() }
+        }
+    }
+
+    /// Single source of truth for which usage monitors should be running.
+    /// Tokens mode shows the unified local-transcript meter and HIDES the plan
+    /// bars, so the Anthropic usage-API poll (rateLimitMonitor) must be stopped
+    /// in that mode — otherwise it keeps hitting api.anthropic.com every 5 min
+    /// for a bar that isn't visible (the issue #50 regression). Leaving tokens
+    /// mode restarts the plan monitor if its bar would show.
+    @MainActor
+    private func syncUsageMonitors() {
+        let c = notchStore.customization
+        let tokensMode = c.showUsageBar && c.usageBarDisplayMode == .tokens
+        if tokensMode {
+            tokenUsageMonitor.start()
+        } else {
+            tokenUsageMonitor.stop()
+        }
+        if c.showUsageBar && !tokensMode && c.showClaudeUsageBar {
+            rateLimitMonitor.start()
+        } else {
+            rateLimitMonitor.stop()
         }
     }
 
@@ -301,13 +315,18 @@ struct ClaudeInstancesView: View {
 
                 // Usage stats if available (honors showUsageBar + sub-toggles)
                 if notchStore.customization.showUsageBar {
-                    if notchStore.customization.showClaudeUsageBar {
-                        UsageStatsBar(monitor: rateLimitMonitor, totalMinutes: 0)
+                    if notchStore.customization.usageBarDisplayMode == .tokens {
+                        TokenUsageStatsBar(monitor: tokenUsageMonitor)
                             .padding(.top, 4)
-                    }
-                    if codexGate.isEnabled && notchStore.customization.showCodexUsageBar {
-                        CodexUsageStatsBar(monitor: codexUsageMonitor)
-                            .padding(.top, 4)
+                    } else {
+                        if notchStore.customization.showClaudeUsageBar {
+                            UsageStatsBar(monitor: rateLimitMonitor, totalMinutes: 0)
+                                .padding(.top, 4)
+                        }
+                        if codexGate.isEnabled && notchStore.customization.showCodexUsageBar {
+                            CodexUsageStatsBar(monitor: codexUsageMonitor)
+                                .padding(.top, 4)
+                        }
                     }
                 }
             }
@@ -345,6 +364,7 @@ struct ClaudeInstancesView: View {
 
     @StateObject private var rateLimitMonitor = RateLimitMonitor.shared
     @StateObject private var codexUsageMonitor = CodexUsageMonitor.shared
+    @StateObject private var tokenUsageMonitor = TokenUsageMonitor.shared
     @ObservedObject private var codexGate = CodexFeatureGate.shared
 
     // MARK: - Instances List
@@ -1536,7 +1556,10 @@ struct UsageStatsBar: View {
             if let info = monitor.rateLimitInfo {
                 Group {
                     switch effectiveMode {
-                    case .auto, .compact: compactBody(info: info)
+                    // .tokens never reaches here (the unified TokenUsageStatsBar
+                    // replaces this bar in tokens mode), but the switch must be
+                    // exhaustive — fall back to compact defensively.
+                    case .auto, .compact, .tokens: compactBody(info: info)
                     case .alert: alertBody(info: info)
                     case .time: timeBody(info: info)
                     }
@@ -1853,7 +1876,8 @@ struct CodexUsageStatsBar: View {
 
                     Group {
                         switch effectiveMode {
-                        case .auto, .compact:
+                        // .tokens handled by the unified bar; fall back to compact.
+                        case .auto, .compact, .tokens:
                             HStack(spacing: 6) {
                                 ForEach(snapshot.windows) { window in
                                     usageGaugeCompact(
@@ -2094,5 +2118,166 @@ struct CodexUsageStatsBar: View {
         let remaining = resetAt.timeIntervalSinceNow
         if remaining <= 0 { return "Codex \(label): \(pct)% (reset)" }
         return "Codex \(label): \(pct)% (resets in \(formatResetShort(remaining)))"
+    }
+}
+
+// MARK: - Token Usage Stats Bar
+//
+// Unified, cross-model token meter (UsageBarDisplayMode.tokens). Reads today's
+// actual token consumption from the local CLI transcripts via TokenUsageMonitor
+// and replaces the per-provider plan-% bars when selected. Headline number is
+// "billable" (input+output); cache tokens are shown muted because they are
+// nearly free and would otherwise dwarf the real number (cache can be 100x+).
+
+struct TokenUsageStatsBar: View {
+    @ObservedObject var monitor: TokenUsageMonitor
+    @ObservedObject private var notchStore: NotchCustomizationStore = .shared
+    private var theme: ThemeResolver { ThemeResolver(theme: notchStore.customization.theme) }
+
+    @State private var appear = false
+    @State private var pulsePhase = false
+    @State private var justRefreshed = false
+
+    private func fmt(_ n: Int) -> String {
+        if n >= 1_000_000 {
+            let m = Double(n) / 1_000_000
+            return String(format: m >= 100 ? "%.0fM" : "%.1fM", m)
+        }
+        if n >= 1_000 {
+            let k = Double(n) / 1_000
+            return String(format: k >= 100 ? "%.0fK" : "%.1fK", k)
+        }
+        return "\(n)"
+    }
+
+    /// Compact, friendly model label. "claude-opus-4-8" → "Opus 4.8".
+    /// Only trailing NUMERIC segments form the version, so a degenerate name
+    /// like bare "opus" yields "Opus" (not "Opus opus").
+    private func shortLabel(_ u: TokenModelUsage) -> String {
+        let m = u.model.lowercased()
+        func ver() -> String {
+            // take trailing parts that look like version numbers (e.g. 4, 8)
+            let digits = m.split(separator: "-").filter { $0.allSatisfy { $0.isNumber } }
+            return digits.suffix(2).joined(separator: ".")
+        }
+        func labeled(_ family: String) -> String {
+            let v = ver()
+            return v.isEmpty ? family : "\(family) \(v)"
+        }
+        if m.contains("opus") { return labeled("Opus") }
+        if m.contains("sonnet") { return labeled("Sonnet") }
+        if m.contains("haiku") { return labeled("Haiku") }
+        if u.provider == "Codex" { return "Codex" }
+        return u.model
+    }
+
+    private var codexBlue: Color { Color(red: 0.56, green: 0.79, blue: 0.98) }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let snap = monitor.snapshot, !snap.isEmpty {
+                // Headline: today's total billable.
+                HStack(spacing: 4) {
+                    Text(L10n.usageBarTokensToday)
+                        .notchFont(7, weight: .semibold)
+                        .foregroundColor(theme.mutedText)
+                        .lineLimit(1)
+                    Text(fmt(snap.totalBillable))
+                        .notchFont(13, weight: .bold, design: .monospaced)
+                        .foregroundColor(theme.doneColor)
+                        .lineLimit(1)
+                }
+                Rectangle()
+                    .fill(theme.usageBorder.opacity(0.5))
+                    .frame(width: 1, height: 14)
+                // Per-model billable, inline (no wrap). Same value size as the
+                // headline so the numbers read consistently across the row.
+                ForEach(snap.models.prefix(3)) { u in
+                    HStack(spacing: 4) {
+                        Text(shortLabel(u))
+                            .notchFont(11, weight: .medium)
+                            .foregroundColor(u.provider == "Codex" ? codexBlue : theme.usageText)
+                            .lineLimit(1)
+                        Text(fmt(u.billable))
+                            .notchFont(13, weight: .semibold, design: .monospaced)
+                            .foregroundColor(theme.usageText)
+                            .lineLimit(1)
+                    }
+                }
+                if snap.models.count > 3 {
+                    Text(L10n.usageBarTokensMore(snap.models.count - 3))
+                        .notchFont(7, weight: .regular)
+                        .foregroundColor(theme.mutedText)
+                        .opacity(0.5)
+                        .lineLimit(1)
+                }
+                // Cache total, de-emphasized, at the end.
+                Text(L10n.usageBarTokensCached(fmt(snap.totalCache)))
+                    .notchFont(7, weight: .regular)
+                    .foregroundColor(theme.usageText)
+                    .opacity(0.45)
+                    .lineLimit(1)
+                refreshIndicator
+            } else {
+                Text(L10n.usageBarTokensEmpty)
+                    .notchFont(8, weight: .regular)
+                    .foregroundColor(theme.mutedText)
+                    .opacity(0.6)
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)   // single line, no wrap/compress
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(theme.overlay.opacity(0.16))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(theme.usageBorder.opacity(0.7), lineWidth: 0.5)
+                )
+        )
+        .opacity(appear ? 1 : 0)
+        .offset(y: appear ? 0 : 5)
+        .contentShape(Rectangle())
+        .onTapGesture { Task { await refreshWithFeedback() } }
+        .help(monitor.isLoading ? L10n.usageBarRefreshingHint
+              : (justRefreshed ? L10n.usageBarJustRefreshed : L10n.usageBarTapToRefresh))
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                pulsePhase = true
+            }
+            withAnimation(.easeOut(duration: 0.4).delay(0.3)) {
+                appear = true
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var refreshIndicator: some View {
+        if monitor.isLoading {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .notchFont(8, weight: .regular)
+                .foregroundColor(theme.mutedText)
+                .rotationEffect(.degrees(pulsePhase ? 360 : 0))
+                .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: pulsePhase)
+                .padding(.leading, 6)
+        } else if justRefreshed {
+            HStack(spacing: 2) {
+                Image(systemName: "checkmark.circle.fill")
+                    .notchFont(8, weight: .regular)
+                Text(L10n.usageBarJustNow)
+                    .notchFont(8, weight: .semibold)
+            }
+            .foregroundColor(theme.doneColor)
+            .padding(.leading, 6)
+            .transition(.opacity.combined(with: .scale(scale: 0.85)))
+        }
+    }
+
+    private func refreshWithFeedback() async {
+        await monitor.refresh()
+        withAnimation(.easeOut(duration: 0.25)) { justRefreshed = true }
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        withAnimation(.easeIn(duration: 0.4)) { justRefreshed = false }
     }
 }

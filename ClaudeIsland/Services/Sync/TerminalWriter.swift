@@ -100,11 +100,18 @@ final class TerminalWriter {
         return detectedFallback
     }
 
-    /// Codex's TUI runs in raw mode and wants a real Enter key event to submit.
-    /// Appending `\r` to the text stream only inserts a newline in its composer.
+    /// Codex's TUI runs in raw mode with bracketed paste: a `\r` in the text
+    /// stream is a literal newline in its composer, never a submit. It only
+    /// submits on a real Enter *key* event. That's true whether or not we
+    /// resolved an explicit cmux surface — `cmux send-key` targets the
+    /// workspace's active surface when `--surface` is omitted — so Codex must
+    /// ALWAYS take the send-then-key path. Gating this on `hasSurfaceTarget`
+    /// was the bug: with no surface it fell back to the inline-`\r` path, which
+    /// strands the text in Codex's composer unsent. `hasSurfaceTarget` is kept
+    /// for callers/diagnostics but no longer changes Codex's submit path.
     nonisolated static func cmuxSubmissionPlan(text: String, terminalApp: String?, hasSurfaceTarget: Bool) -> CmuxSubmissionPlan {
         let normalizedApp = terminalApp?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if normalizedApp == "codex", hasSurfaceTarget {
+        if normalizedApp == "codex" {
             return .sendThenKey(text: text, key: "enter")
         }
 
@@ -851,11 +858,18 @@ final class TerminalWriter {
                 Self.logger.error("cmux send failed for workspace=\(wsId)")
                 return false
             }
-            guard let surfId else {
-                Self.logger.error("cmux submit-key requires a surface for workspace=\(wsId)")
-                return false
-            }
-            guard await cmuxRun(["send-key", "--workspace", wsId, "--surface", surfId, "--", key]) != nil else {
+            // Codex ingests the pasted text on its own raw-mode event loop;
+            // settle briefly so the submit key doesn't land before the composer
+            // holds the text (mirrors the image-path paste settle on line ~751).
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            // `cmux send-key` defaults `--surface` to the workspace's active
+            // surface, so we no longer bail when surfId is nil: the text `send`
+            // above already landed on that active surface. Pass the surface
+            // explicitly when we have one for precision.
+            var keyArgs = ["send-key", "--workspace", wsId]
+            if let surfId { keyArgs += ["--surface", surfId] }
+            keyArgs += ["--", key]
+            guard await cmuxRun(keyArgs) != nil else {
                 Self.logger.error("cmux send-key '\(key)' failed for workspace=\(wsId)")
                 return false
             }
