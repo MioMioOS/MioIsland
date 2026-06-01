@@ -1486,6 +1486,20 @@ private struct CheckForUpdatesCard: View {
 
     var body: some View {
         SettingsCard {
+            // Auto-update opt-out (issue #87): Homebrew users let `brew` manage
+            // updates and want the in-app background check off. Manual check
+            // below still works either way.
+            SettingRow(
+                icon: "clock.arrow.2.circlepath",
+                label: L10n.autoCheckForUpdates,
+                sublabel: L10n.autoCheckForUpdatesHint,
+                isLast: false
+            ) {
+                IOSToggle(isOn: updater.automaticallyChecksForUpdates) {
+                    updater.setAutomaticUpdateChecks(!updater.automaticallyChecksForUpdates)
+                }
+            }
+
             Button {
                 updater.checkForUpdates()
             } label: {

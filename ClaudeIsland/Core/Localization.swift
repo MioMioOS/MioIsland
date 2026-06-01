@@ -185,6 +185,8 @@ enum L10n {
     static var accessibility: String { tr("Accessibility", "辅助功能") }
     static var version: String { tr("Version", "版本") }
     static var checkForUpdates: String { tr("Check for Updates", "检查更新") }
+    static var autoCheckForUpdates: String { tr("Check for Updates Automatically", "自动检查更新") }
+    static var autoCheckForUpdatesHint: String { tr("Turn off if you update via Homebrew", "通过 Homebrew 更新可关闭") }
     static var standby: String { tr("Standby", "待机中") }
     static var quit: String { tr("Quit", "退出") }
     static var on: String { tr("On", "开") }

@@ -21,6 +21,14 @@ final class UpdaterManager: NSObject, ObservableObject {
 
     @Published var canCheckForUpdates = false
 
+    /// Whether Sparkle performs background update checks on its own schedule.
+    /// Mirrors Sparkle's `automaticallyChecksForUpdates`, which Sparkle persists
+    /// to UserDefaults (`SUEnableAutomaticChecks`) — we don't store it ourselves.
+    /// Exposed so Homebrew users (who let `brew` manage updates) can turn the
+    /// in-app auto-check off. See issue #87. The manual `checkForUpdates()`
+    /// button keeps working regardless of this flag.
+    @Published var automaticallyChecksForUpdates = true
+
     private override init() {
         super.init()
         controller = SPUStandardUpdaterController(
@@ -32,10 +40,20 @@ final class UpdaterManager: NSObject, ObservableObject {
         // Observe Sparkle's canCheckForUpdates KVO property
         controller.updater.publisher(for: \.canCheckForUpdates)
             .assign(to: &$canCheckForUpdates)
+
+        // Mirror Sparkle's auto-check preference so the SwiftUI toggle reflects
+        // the real (persisted) state, including the default seeded from Info.plist.
+        controller.updater.publisher(for: \.automaticallyChecksForUpdates)
+            .assign(to: &$automaticallyChecksForUpdates)
     }
 
     func checkForUpdates() {
         controller.checkForUpdates(nil)
+    }
+
+    /// Toggle Sparkle's background auto-check. Sparkle persists this itself.
+    func setAutomaticUpdateChecks(_ enabled: Bool) {
+        controller.updater.automaticallyChecksForUpdates = enabled
     }
 }
 
