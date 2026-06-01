@@ -185,6 +185,8 @@ enum L10n {
     static var accessibility: String { tr("Accessibility", "辅助功能") }
     static var version: String { tr("Version", "版本") }
     static var checkForUpdates: String { tr("Check for Updates", "检查更新") }
+    static var autoCheckForUpdates: String { tr("Check for Updates Automatically", "自动检查更新") }
+    static var autoCheckForUpdatesHint: String { tr("Turn off if you update via Homebrew", "通过 Homebrew 更新可关闭") }
     static var standby: String { tr("Standby", "待机中") }
     static var quit: String { tr("Quit", "退出") }
     static var on: String { tr("On", "开") }
@@ -244,7 +246,7 @@ enum L10n {
     static var cmuxTabHeader: String { tr("Diagnose the relay between your iPhone and the terminal.", "诊断手机和终端之间的消息转发链路。") }
     static var cmuxBinaryRow: String { tr("cmux CLI", "cmux 命令行") }
     static var cmuxBinaryFound: String { tr("Found", "已找到") }
-    static var cmuxBinaryMissing: String { tr("Not installed at /Applications/cmux.app", "未安装在 /Applications/cmux.app") }
+    static var cmuxBinaryMissing: String { tr("Not found (checked Homebrew, /Applications, ~/Applications)", "未找到（已检查 Homebrew、/Applications、~/Applications）") }
     static var accessibilityRowTitle: String { tr("Accessibility permission", "辅助功能权限") }
     static var accessibilityGranted: String { tr("Granted", "已授权") }
     static var accessibilityDenied: String { tr("Not granted — AppleScript relays will silently fail", "未授权 — AppleScript 转发会静默失败") }

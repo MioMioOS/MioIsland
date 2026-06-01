@@ -46,7 +46,7 @@ actor TerminalJumper {
         }
 
         if lower.contains("cmux") {
-            if await jumpViaCmux(cwd: cwd, sessionId: session.sessionId, tty: session.tty) { return true }
+            if await jumpViaCmux(cwd: cwd, sessionId: session.sessionId, tty: session.tty, surfaceId: session.cmuxSurfaceId) { return true }
         }
 
         if lower.contains("ghostty") {
@@ -79,7 +79,7 @@ actor TerminalJumper {
         //    the user was on iTerm, which could dispatch an AppleEvent to a
         //    missing cmux and hang/fail silently.
         if isRunning(bundleId: "com.cmuxterm.app") {
-            if await jumpViaCmux(cwd: cwd, sessionId: session.sessionId, tty: session.tty) { return true }
+            if await jumpViaCmux(cwd: cwd, sessionId: session.sessionId, tty: session.tty, surfaceId: session.cmuxSurfaceId) { return true }
         }
         if isRunning(bundleId: "com.mitchellh.ghostty") {
             if await jumpViaGhostty(cwd: cwd) { return true }
@@ -235,17 +235,28 @@ actor TerminalJumper {
 
     // MARK: - cmux (native AppleScript — `focus terminal`)
 
-    private func jumpViaCmux(cwd: String, sessionId: String? = nil, tty: String? = nil) async -> Bool {
+    private func jumpViaCmux(cwd: String, sessionId: String? = nil, tty: String? = nil, surfaceId: String? = nil) async -> Bool {
         guard CmuxTreeParser.isAvailable else { return false }
 
-        DebugLogger.log("Jump", "cmux jump: cwd=\(cwd)")
+        // Tier 1 (most robust): focus by the cmux surface ID the hook captured
+        // (CMUX_SURFACE_ID → SessionState.cmuxSurfaceId). Immune to the cwd
+        // drift — pane closed, `cd`'d away, symlink/trailing-slash mismatch —
+        // that makes the working-directory match miss (issue #62). If the ID is
+        // stale/unknown cmux just errors and we fall through to the cwd match.
+        if let surfaceId, !surfaceId.isEmpty {
+            DebugLogger.log("Jump", "cmux jump by surfaceId=\(surfaceId.prefix(8))…")
+            if await CmuxTreeParser.jump(panelId: surfaceId) {
+                return true
+            }
+        }
 
-        // One call: focus the terminal whose working directory matches
+        // Tier 2: focus the terminal whose working directory matches (guarded).
+        DebugLogger.log("Jump", "cmux jump: cwd=\(cwd)")
         if await CmuxTreeParser.jump(cwd: cwd) {
             return true
         }
 
-        // Fallback: just bring cmux to front
+        // Tier 3: just bring cmux to front.
         DebugLogger.log("Jump", "cmux focus failed, activating cmux app")
         await bringCmuxToFront()
         return true

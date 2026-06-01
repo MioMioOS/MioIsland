@@ -125,6 +125,10 @@ final class TerminalWriter {
     /// the cmux connection diagnostic UI in System Settings.
     struct ConnectionProbe: Sendable {
         let cmuxBinaryInstalled: Bool
+        /// The exact path the relay resolved cmux to (or nil if not found).
+        /// Surfaced in the diagnostic row so a user can confirm *which* cmux
+        /// install the relay is using — the crux of the #49/#62 reports.
+        let cmuxBinaryPath: String?
         let accessibilityGranted: Bool
         let claudeSessionCount: Int
         /// Automation (AppleEvents) permission for the first running terminal.
@@ -143,7 +147,9 @@ final class TerminalWriter {
     /// phone message landing in cmux". Non-invasive — does not write to any
     /// terminal.
     func probeConnection() async -> ConnectionProbe {
-        let cmuxOk = FileManager.default.isExecutableFile(atPath: self.cmuxPath)
+        // Force a re-scan so the diagnostic reflects the live state (the user
+        // may have just installed/opened cmux and tapped "Refresh").
+        let cmuxResolved = CmuxBinary.resolvedPath(forceRefresh: true)
         let axOk = AXIsProcessTrusted()
         let procs = await listClaudeProcesses()
         var firstTarget: (workspaceId: String, surfaceId: String?)?
@@ -155,7 +161,8 @@ final class TerminalWriter {
         }
         let (autoOk, autoDetail) = probeAutomationPermission()
         return ConnectionProbe(
-            cmuxBinaryInstalled: cmuxOk,
+            cmuxBinaryInstalled: cmuxResolved != nil,
+            cmuxBinaryPath: cmuxResolved,
             accessibilityGranted: axOk,
             claudeSessionCount: procs.count,
             automationGranted: autoOk,
@@ -318,7 +325,7 @@ final class TerminalWriter {
         let termApp = session.terminalApp?.lowercased() ?? ""
 
         // Try cmux first (most precise)
-        if FileManager.default.isExecutableFile(atPath: cmuxPath) {
+        if cmuxPath != nil {
             if await sendViaCmux(text, session: session) {
                 return true
             }
@@ -1123,7 +1130,11 @@ final class TerminalWriter {
     /// previous raw Process.waitUntilExit could freeze the main thread when
     /// cmux became unresponsive (main cause of the "CodeIsland 卡死" reports).
     nonisolated private func cmuxRun(_ args: [String]) async -> String? {
-        let (out, ok) = await runShellWithTimeout(cmuxPath, args, timeout: 5.0)
+        guard let path = cmuxPath else {
+            DebugLogger.log("Cmux", "cmux binary not found in any known path — relay skipped")
+            return nil
+        }
+        let (out, ok) = await runShellWithTimeout(path, args, timeout: 5.0)
         return ok ? out : nil
     }
 
@@ -1395,9 +1406,12 @@ final class TerminalWriter {
 
 // MARK: - cmuxPath hoist for nonisolated access
 
-/// The nonisolated helpers above need access to `cmuxPath`, which is a
-/// stored instance property. Since cmuxPath is a constant, expose it via
-/// a nonisolated computed accessor.
+/// The nonisolated helpers above need to resolve the cmux CLI path. We delegate
+/// to the shared `CmuxBinary` resolver so the relay finds cmux at the SAME
+/// locations `LaunchService` does (Homebrew, ~/Applications, a running app's
+/// bundle, …) — not just the old hardcoded `/Applications/cmux.app` path that
+/// silently broke the relay for every non-standard install (issues #49, #62).
+/// Returns nil when cmux isn't installed anywhere.
 extension TerminalWriter {
-    nonisolated fileprivate var cmuxPath: String { "/Applications/cmux.app/Contents/Resources/bin/cmux" }
+    nonisolated fileprivate var cmuxPath: String? { CmuxBinary.resolvedPath() }
 }

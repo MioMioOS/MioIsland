@@ -71,21 +71,9 @@ final class LaunchService {
     // MARK: - Helpers
 
     private func findCmuxBinary() -> String? {
-        let candidates = [
-            // Homebrew / user installs
-            "/opt/homebrew/bin/cmux",
-            "/usr/local/bin/cmux",
-            "\(NSHomeDirectory())/.local/bin/cmux",
-            // cmux.app bundle install
-            "/Applications/cmux.app/Contents/Resources/bin/cmux",
-            "\(NSHomeDirectory())/Applications/cmux.app/Contents/Resources/bin/cmux",
-        ]
-        for path in candidates {
-            if FileManager.default.isExecutableFile(atPath: path) {
-                return path
-            }
-        }
-        return nil
+        // Delegates to the shared resolver so the launcher and the phone→terminal
+        // relay (TerminalWriter) agree on where cmux lives. See CmuxBinary.
+        CmuxBinary.resolvedPath()
     }
 
 }
