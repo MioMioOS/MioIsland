@@ -107,11 +107,11 @@ enum AgentLifecyclePhase: Equatable {
 /// Single view model passed through the UI.
 struct AgentLifecycleSnapshot {
     var binaryExists: Bool = false
+    var npxAvailable: Bool = false      // #117: npx-cached launch path is usable
     var configExists: Bool = false      // ~/.mio/agent.json — required before Start
     var launchAgentLoaded: Bool? = nil  // nil = probe not run yet
     var processRunning: Bool = false
     var healthReachable: Bool = false
-    var socketExists: Bool? = nil       // Phase 2: ~/.mio/agent.sock
     var logFileExists: Bool = false
     var phase: AgentLifecyclePhase = .checking
     var lastCheckedAt: Date? = nil
@@ -140,8 +140,6 @@ struct AgentSettingsTab: View {
         .appendingPathComponent(".mio/agent.json").path
     private let plistPath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/LaunchAgents/io.miomioos.mio-agent.plist").path
-    private let socketPath = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".mio/agent.sock").path
     private let logPath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".mio/agent.log").path
     private let mioDir = FileManager.default.homeDirectoryForCurrentUser
@@ -159,15 +157,20 @@ struct AgentSettingsTab: View {
             // MARK: Overall status card
             overallStatusCard
 
+            // MARK: Workspace status panel (#117) — this computer's workspace +
+            // daemon liveness + monitoring, all read from REAL local state.
+            SectionLabel(L10n.agentSectionWorkspace)
+            WorkspaceStatusPanel(snap: snap)
+
             // MARK: Lifecycle detail rows
             SectionLabel(L10n.agentSectionLifecycle)
             lifecycleDetailRows
 
             // MARK: Workspace enrollment (R2.1 — shells out to `mio-agent login`)
-            // Shown whenever the binary is installed. The card adapts: enroll
-            // form when unconfigured, status while enrolling, "already enrolled"
-            // once agent.json exists.
-            if snap.binaryExists {
+            // Shown whenever the daemon is launchable (npx-cached OR installed
+            // binary, #117). The card adapts: enroll form when unconfigured,
+            // status while enrolling, "already enrolled" once agent.json exists.
+            if snap.binaryExists || snap.npxAvailable {
                 SectionLabel(L10n.agentEnrollSection)
                 EnrollWorkspaceCard(
                     serverUrl: SyncManager.shared.serverUrl,
@@ -189,10 +192,6 @@ struct AgentSettingsTab: View {
             // MARK: Logs card
             SectionLabel(L10n.agentSectionLogs)
             logsCard
-
-            // MARK: Upcoming capabilities
-            SectionLabel(L10n.agentSectionCapabilities)
-            upcomingCapabilitiesCard
         }
         .task { await refreshStatus() }
     }
@@ -305,14 +304,7 @@ struct AgentSettingsTab: View {
                 state: snap.healthReachable
                     ? (L10n.agentStateOK, Theme.success)
                     : (snap.processRunning ? L10n.agentStateFailed : L10n.agentStateUnavailable,
-                       snap.processRunning ? Theme.error : Theme.neutralDot)
-            )
-            Divider().opacity(0.3)
-            lifecycleRow(
-                icon: "point.3.connected.trianglepath.dotted",
-                title: L10n.agentRowSocket,
-                path: "~/.mio/agent.sock",
-                state: (L10n.agentStateSocketPending, Theme.neutralDot),
+                       snap.processRunning ? Theme.error : Theme.neutralDot),
                 isLast: true
             )
         }
@@ -424,34 +416,6 @@ struct AgentSettingsTab: View {
         }
     }
 
-    // MARK: - Upcoming capabilities card
-
-    private var upcomingCapabilitiesCard: some View {
-        SettingsListCard {
-            unavailableRow(
-                icon: "bolt.horizontal.fill",
-                label: L10n.agentCapActionExecution,
-                sublabel: L10n.agentCapActionDesc
-            )
-            unavailableRow(
-                icon: "rectangle.3.group.fill",
-                label: L10n.agentCapWorkroom,
-                sublabel: L10n.agentCapWorkroomDesc
-            )
-            unavailableRow(
-                icon: "list.bullet.rectangle.fill",
-                label: L10n.agentCapLogStreaming,
-                sublabel: L10n.agentCapLogStreamingDesc
-            )
-            unavailableRow(
-                icon: "arrow.up.circle.fill",
-                label: L10n.agentCapAutoUpgrade,
-                sublabel: L10n.agentCapAutoUpgradeDesc,
-                isLast: true
-            )
-        }
-    }
-
     // MARK: - View helpers
 
     @ViewBuilder
@@ -550,27 +514,6 @@ struct AgentSettingsTab: View {
         .disabled(!enabled)
     }
 
-    @ViewBuilder
-    private func unavailableRow(
-        icon: String,
-        label: String,
-        sublabel: String,
-        isLast: Bool = false
-    ) -> some View {
-        SettingRow(icon: icon, label: label, sublabel: sublabel, isLast: isLast) {
-            Text(L10n.agentCapSoon)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(Theme.subtle)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule()
-                        .fill(Theme.controlFill)
-                        .overlay(Capsule().strokeBorder(Theme.controlBorder, lineWidth: 0.5))
-                )
-        }
-        .opacity(0.55)
-    }
 
     // MARK: - Status probe
 
@@ -580,8 +523,8 @@ struct AgentSettingsTab: View {
         // Probe all fields concurrently where safe
         let fm = FileManager.default
         let binExists = fm.fileExists(atPath: binaryPath)
+        let npxOK = MioAgentLauncher.npxAvailable
         let cfgExists = fm.fileExists(atPath: configPath)
-        let sockExists = fm.fileExists(atPath: socketPath)
         let logExists = fm.fileExists(atPath: logPath)
 
         // LaunchAgent loaded: `launchctl list <label>` exits 0 if the service is visible in the
@@ -598,16 +541,20 @@ struct AgentSettingsTab: View {
 
         await MainActor.run {
             snap.binaryExists = binExists
+            snap.npxAvailable = npxOK
             snap.configExists = cfgExists
             snap.launchAgentLoaded = binExists ? launchLoaded : false
             snap.processRunning = procRunning
             snap.healthReachable = healthy
-            snap.socketExists = sockExists
             snap.logFileExists = logExists
             snap.lastCheckedAt = Date()
 
-            // Phase determination (order matters)
-            if !binExists {
+            // Phase determination (order matters).
+            // #117: a usable npx-cached launcher counts as "installed" for the
+            // purpose of enrollment — the daemon can run via `npx` with no
+            // GitHub-binary download. Only fall to .notInstalled when NEITHER a
+            // binary nor npx is available.
+            if !binExists && !npxOK {
                 snap.phase = .notInstalled
             } else if !cfgExists {
                 // Binary installed but agent.json missing: user must run `mio-agent login` first.
@@ -681,23 +628,29 @@ struct AgentSettingsTab: View {
             try FileManager.default.createDirectory(atPath: mioDir, withIntermediateDirectories: true)
             try FileManager.default.createDirectory(atPath: launchAgentsDir, withIntermediateDirectories: true)
 
-            // Download, verify (SHA-256), extract, and atomically install the daemon binary
-            // from the GitHub Release artifact. This replaces the old bundle-lookup approach
-            // (Bundle.main.path forResource:"mio-agent") — the Resources phase is intentionally
-            // empty; the binary is always fetched fresh from the pinned release tag (#121).
-            //
-            // No-overwrite-on-fail: MioAgentDistribution only writes to binaryPath after all
-            // verification passes; any earlier failure leaves the existing binary intact.
-            try await MioAgentDistribution.downloadAndInstall(
-                to: binaryPath,
-                onProgress: { [self] msg in
-                    Task { @MainActor in snap.lastDiagnostic = msg }
-                }
-            )
+            // #117: npx-cached is the PREFERRED distribution. When npx is available
+            // we DON'T download/verify/codesign a GitHub-Release binary at all — the
+            // LaunchAgent plist invokes `npx -y @miomioos/mio-agent@<ver> run` and npm
+            // owns package integrity + caching. The GitHub-binary download remains the
+            // FALLBACK only when npx is absent.
+            if MioAgentLauncher.npxAvailable {
+                await MainActor.run { snap.lastDiagnostic = L10n.agentDiagUsingNpx }
+            } else {
+                // Fallback: download, verify (SHA-256), extract, and atomically install
+                // the daemon binary from the GitHub Release artifact (#121).
+                // No-overwrite-on-fail: MioAgentDistribution only writes to binaryPath
+                // after all verification passes; any earlier failure leaves it intact.
+                try await MioAgentDistribution.downloadAndInstall(
+                    to: binaryPath,
+                    onProgress: { [self] msg in
+                        Task { @MainActor in snap.lastDiagnostic = msg }
+                    }
+                )
 
-            // Ad-hoc codesign required on Apple Silicon for launchd/Keychain access
-            await MainActor.run { snap.lastDiagnostic = "Signing binary..." }
-            await shellRun("/usr/bin/codesign", args: ["--sign", "-", "--force", binaryPath])
+                // Ad-hoc codesign required on Apple Silicon for launchd/Keychain access.
+                await MainActor.run { snap.lastDiagnostic = L10n.agentDiagSigning }
+                await shellRun("/usr/bin/codesign", args: ["--sign", "-", "--force", binaryPath])
+            }
 
             let plistContent = launchAgentPlist()
             try plistContent.write(toFile: plistPath, atomically: true, encoding: .utf8)
@@ -774,12 +727,6 @@ struct AgentSettingsTab: View {
             snap.lastDiagnostic = L10n.agentDiagStopping
         }
 
-        // TODO(Phase2): Replace with real IPC drain — send drain request via agent.sock,
-        // wait for irreversible in-flight actions to reach transmission_complete or
-        // needs_human (spec: 8s deadline), then proceed with bootout.
-        // Phase 1: no IPC, proceed directly to bootout.
-        await requestDrain(deadlineMs: 8_000)
-
         let uid = "\(getuid())"
         let (bootoutExit, bootoutErr) = await shellRun("/bin/launchctl", args: ["bootout", "gui/\(uid)/\(launchLabel)"])
         if bootoutExit != 0 {
@@ -803,14 +750,6 @@ struct AgentSettingsTab: View {
         }
     }
 
-    /// IPC drain stub — no-op in Phase 1.
-    ///
-    /// Phase 2 implementation: open a Unix socket to socketPath (agent.sock),
-    /// send a drain request, await acknowledgment or deadline.
-    /// On deadline, proceed with bootout — ExitTimeOut=15s provides a final safety window.
-    private func requestDrain(deadlineMs: Int) async {
-        _ = deadlineMs  // intentional Phase 2 signature
-    }
 
     /// Returns (exitCode, stderrOutput). Stderr is captured so callers can surface real launchctl errors.
     @discardableResult
@@ -867,6 +806,36 @@ struct AgentSettingsTab: View {
 
     private func launchAgentPlist() -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
+
+        // #117: point ProgramArguments at the resolved launcher.
+        //   - npx-cached (preferred): npx -y @miomioos/mio-agent@<ver> run
+        //   - installed binary (fallback): ~/.mio/bin/mio-agent run
+        // launchd needs node on the child PATH for the npx case, so we also emit
+        // an EnvironmentVariables/PATH that includes the toolchain dir.
+        var programArgs: [String]
+        var pathEnvLine = ""
+        switch MioAgentLauncher.resolve() {
+        case .success(let launch):
+            programArgs = launch.argv(["run"])
+            if let dir = launch.toolchainDir {
+                pathEnvLine = """
+                    <key>EnvironmentVariables</key>
+                    <dict>
+                        <key>PATH</key>
+                        <string>\(dir):/usr/bin:/bin:/usr/sbin:/sbin</string>
+                    </dict>
+                """
+            }
+        case .failure:
+            // Should not happen (install gates on availability) — fall back to the
+            // canonical binary path so the plist is still well-formed.
+            programArgs = [binaryPath, "run"]
+        }
+
+        let argsXML = programArgs
+            .map { "        <string>\($0)</string>" }
+            .joined(separator: "\n")
+
         return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -876,9 +845,9 @@ struct AgentSettingsTab: View {
             <string>\(launchLabel)</string>
             <key>ProgramArguments</key>
             <array>
-                <string>\(binaryPath)</string>
-                <string>run</string>
+        \(argsXML)
             </array>
+        \(pathEnvLine)
             <key>RunAtLoad</key>
             <true/>
             <key>KeepAlive</key>
@@ -892,6 +861,167 @@ struct AgentSettingsTab: View {
         </dict>
         </plist>
         """
+    }
+}
+
+// MARK: - WorkspaceStatusPanel (#117)
+
+/// Live status surface for THIS computer's workspace. Every row reads REAL state:
+///   - Workspace: enrolled name (host) + machine_id from ~/.mio/agent.json, or "Not enrolled".
+///   - Daemon: Online iff the process is running AND its local health endpoint returns 200
+///             (the same signals the lifecycle probe collects). The server's online window is
+///             driven by mio-agent's 45s machine heartbeat — surfaced in the hint, not faked.
+///   - Monitoring: derived from SyncManager's live connection state (claude/codex session sync).
+///   - Launch path: which #117 distribution strategy is resolved (npx-cached / binary / none).
+///
+/// NO hardcoded/placeholder rows — if a value is unknown it reads the unknown/offline state.
+private struct WorkspaceStatusPanel: View {
+    /// The lifecycle snapshot already probed by the parent tab (process + health + binary + npx).
+    let snap: AgentLifecycleSnapshot
+    @ObservedObject private var syncManager = SyncManager.shared
+
+    private var configPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".mio/agent.json").path
+    }
+
+    /// Parsed agent.json (server_url + machine_id) when enrolled, else nil.
+    private var enrolled: (serverUrl: String, machineId: String)? {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
+              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { return nil }
+        let server = (root["server_url"] as? String) ?? ""
+        let machine = (root["machine_id"] as? String) ?? ""
+        guard !machine.isEmpty else { return nil }
+        return (server, machine)
+    }
+
+    /// Workspace display name = this Mac's host name (1 computer = 1 workspace).
+    private var workspaceName: String { Host.current().localizedName ?? "Mac" }
+
+    /// Daemon is online only when the process runs AND its health endpoint answers 200.
+    private var daemonOnline: Bool { snap.processRunning && snap.healthReachable }
+
+    var body: some View {
+        SettingsListCard {
+            // Workspace row
+            statusRow(
+                icon: "macwindow",
+                title: L10n.wsRowWorkspace,
+                detail: enrolled != nil ? "\(workspaceName) · \(enrolled!.machineId.prefix(8))" : workspaceName,
+                state: enrolled != nil
+                    ? (snap.configExists ? (L10n.agentStateConfigPresent, Theme.success) : (L10n.wsWorkspaceUnconfigured, Theme.warning))
+                    : (L10n.wsWorkspaceUnconfigured, Theme.warning)
+            )
+            Divider().opacity(0.3)
+
+            // Daemon liveness row
+            statusRow(
+                icon: "bolt.heart.fill",
+                title: L10n.wsRowDaemon,
+                detail: L10n.wsDaemonHint,
+                state: daemonOnline
+                    ? (L10n.wsDaemonOnline, Theme.success)
+                    : (L10n.wsDaemonOffline, Theme.warning),
+                detailIsHint: true
+            )
+            Divider().opacity(0.3)
+
+            // Monitoring (session sync) row
+            statusRow(
+                icon: "dot.radiowaves.left.and.right",
+                title: L10n.wsRowMonitoring,
+                detail: monitoringDetail,
+                state: monitoringState
+            )
+            Divider().opacity(0.3)
+
+            // Launch path (#117 distribution strategy)
+            statusRow(
+                icon: "shippingbox.fill",
+                title: L10n.wsRowDistribution,
+                detail: distributionDetail,
+                state: distributionState,
+                isLast: true
+            )
+        }
+    }
+
+    // Monitoring is the existing CodeLight session-sync link (SyncManager).
+    private var monitoringDetail: String {
+        switch syncManager.connectionState {
+        case .connected:    return SyncManager.shared.serverUrl.flatMap { URL(string: $0)?.host } ?? ""
+        case .connecting, .authenticating: return ""
+        case .error(let m): return m
+        case .disconnected: return ""
+        }
+    }
+    private var monitoringState: (String, Color) {
+        switch syncManager.connectionState {
+        case .connected:    return (L10n.wsMonitoringOn, Theme.success)
+        case .connecting, .authenticating: return (L10n.wsMonitoringConnecting, .blue)
+        case .error:        return (L10n.wsMonitoringOff, Theme.error)
+        case .disconnected: return (L10n.wsMonitoringOff, Theme.neutralDot)
+        }
+    }
+
+    private var distributionDetail: String {
+        switch MioAgentLauncher.resolve() {
+        case .success(let l):
+            return l.kind == .npx ? MioAgentLauncher.npmSpec : MioAgentLauncher.installedBinaryPath
+        case .failure:
+            return ""
+        }
+    }
+    private var distributionState: (String, Color) {
+        switch MioAgentLauncher.resolve() {
+        case .success(let l): return l.kind == .npx ? (L10n.wsDistNpx, Theme.success) : (L10n.wsDistBinary, Theme.success)
+        case .failure:        return (L10n.wsDistNone, Theme.warning)
+        }
+    }
+
+    @ViewBuilder
+    private func statusRow(
+        icon: String,
+        title: String,
+        detail: String,
+        state: (String, Color),
+        detailIsHint: Bool = false,
+        isLast: Bool = false
+    ) -> some View {
+        HStack(alignment: detailIsHint ? .top : .center, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 11))
+                .foregroundColor(Theme.subtleStrong)
+                .frame(width: 16)
+                .padding(.top, detailIsHint ? 2 : 0)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Theme.detailText.opacity(0.9))
+                if !detail.isEmpty {
+                    Text(detail)
+                        .font(.system(size: 10))
+                        .foregroundColor(Theme.subtle)
+                        .lineLimit(detailIsHint ? 3 : 1)
+                        .truncationMode(.middle)
+                        .fixedSize(horizontal: false, vertical: detailIsHint)
+                }
+            }
+
+            Spacer()
+
+            Text(state.0)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(state.1)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(state.1.opacity(0.12))
+                .clipShape(Capsule())
+                .padding(.top, detailIsHint ? 2 : 0)
+        }
+        .padding(.vertical, 8)
     }
 }
 

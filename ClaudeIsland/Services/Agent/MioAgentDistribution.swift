@@ -31,7 +31,10 @@ enum MioAgentDistribution {
     // ── Release pin ───────────────────────────────────────────────────────────
 
     /// Pinned release version. Update when cutting a new mio-agent release.
-    static let pinnedVersion = "0.1.0"
+    /// Drives BOTH the GitHub-binary download AND the npx-cached launch
+    /// (MioAgentLauncher.npmSpec = `@miomioos/mio-agent@<pinnedVersion>`), so the
+    /// two distribution paths always run the same release.
+    static let pinnedVersion = "0.2.3"
 
     static let repoOwner = "MioMioOS"
     static let repoName  = "mio-agent"
