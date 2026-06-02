@@ -12,44 +12,54 @@ private func pairPhoneTheme() -> ThemeResolver {
     ThemeResolver(theme: NotchCustomizationStore.shared.customization.theme)
 }
 
-// MARK: - QR payload (R2.7 dual QR)
+// MARK: - QR payload (#118 — one QR = monitoring + workspace by default)
 
-/// Builds the JSON payload the CodeLight camera parses. A single scan can carry
-/// BOTH the monitoring shortCode AND an enrollment intent so the phone pairs
-/// monitoring AND configures the workspace daemon at once.
+/// Builds the JSON payload the CodeLight camera parses. A single scan carries
+/// BOTH the monitoring shortCode AND a workspace enrollment intent so the phone
+/// pairs monitoring AND configures the workspace daemon in one scan.
+///
+/// #118 default behavior: when this Mac is enrollable and not already enrolled,
+/// the QR surface proactively creates the enrollment intent on appear
+/// (MioAgentEnroller.ensureWorkspaceIntentForQR), so the EMITTED QR is `kind:"both"`
+/// by default — the user is NOT asked to scan twice. The single payload encodes
+/// everything CodeLight needs: one scan → device joins monitoring AND its workspace.
 ///
 /// Shape (coordinated with the CodeLight camera parser):
 ///   {
 ///     "server": "<url>",
 ///     "code": "<monitoring shortCode>",
-///     "enroll_intent_id": "<uuid>",   // present only when enrolling
-///     "enroll_code": "<opaque>",      // present only when enrolling
+///     "enroll_intent_id": "<uuid>",   // present when workspace pairing is offered
+///     "enroll_code": "<opaque>",      // present when workspace pairing is offered
 ///     "kind": "monitor" | "workspace" | "both"
 ///   }
-/// - kind "monitor"   → only the monitoring shortCode is present.
-/// - kind "workspace" → only an enrollment intent is present (no monitoring code).
-/// - kind "both"      → both are present (one scan does everything).
+/// - kind "both"      → DEFAULT: monitoring + workspace (one scan does everything).
+/// - kind "monitor"   → degraded: only monitoring (already enrolled, or daemon not
+///                       launchable — workspace setup never blocks the monitor pair).
+/// - kind "workspace" → only an enrollment intent (no monitoring code yet).
 enum PairQRPayload {
     static func make(serverUrl: String, shortCode: String?, enrollIntent: MioEnrollIntent?) -> Data? {
-        var payload: [String: String] = ["server": serverUrl]
-
         let hasMonitor = !(shortCode ?? "").isEmpty
-        if hasMonitor { payload["code"] = shortCode! }
 
+        // Workspace enrollment present → emit the SAME canonical `mio://enroll/<id>?code=…&server=…
+        // &name=…&platform=…&arch=…` deeplink that `mio-agent login` produces and CodeLight already
+        // parses. Single source of truth — no bespoke JSON. The monitoring shortCode rides along as
+        // an optional `monitor_code` query param so ONE scan does workspace + monitoring (#118).
         if let enroll = enrollIntent {
-            payload["enroll_intent_id"] = enroll.intentId
-            payload["enroll_code"] = enroll.opaqueCode
+            var deeplink = enroll.deeplink
+            if hasMonitor {
+                let encoded = shortCode!.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? shortCode!
+                deeplink += (deeplink.contains("?") ? "&" : "?") + "monitor_code=\(encoded)"
+            }
+            return deeplink.data(using: .utf8)
         }
 
-        let kind: String
-        switch (hasMonitor, enrollIntent != nil) {
-        case (true, true):  kind = "both"
-        case (false, true): kind = "workspace"
-        default:            kind = "monitor"
+        // Monitoring-only fallback (no workspace daemon enrolled): legacy { server, code } JSON,
+        // which CodeLight's monitoring branch still understands.
+        if hasMonitor {
+            return try? JSONSerialization.data(withJSONObject: ["server": serverUrl, "code": shortCode!])
         }
-        payload["kind"] = kind
 
-        return try? JSONSerialization.data(withJSONObject: payload)
+        return nil
     }
 
     /// Render `payload` JSON into a crisp, scannable QR NSImage.
@@ -259,6 +269,10 @@ private struct QRPairingContentView: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .onAppear {
+            // #118: one QR = monitoring + workspace by default. Proactively create
+            // a workspace enrollment intent (no-op if already enrolled / daemon
+            // unavailable) so the single QR carries both capabilities.
+            enroller.ensureWorkspaceIntentForQR(serverUrl: serverUrl)
             generateQRCode()
             Task { await refreshLinkedDevices() }
         }
@@ -296,8 +310,9 @@ private struct QRPairingContentView: View {
                 .overlay(ProgressView().tint(Self.cardText.opacity(0.45)))
         }
 
-        // "Scan or enter code"
-        Text("Scan or enter code")
+        // Caption — reflect "one scan = monitoring + workspace" (#118) when the
+        // QR carries a workspace enrollment intent (the default for an enrollable Mac).
+        Text(enroller.intent != nil ? L10n.pairScanCaptionBoth : "Scan or enter code")
             .font(.system(size: 12, weight: .medium))
             .foregroundColor(Self.cardText.opacity(0.6))
 
@@ -613,6 +628,8 @@ struct PairPhonePanelView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
+            // #118: one QR = monitoring + workspace by default (see QRPairingContentView).
+            enroller.ensureWorkspaceIntentForQR(serverUrl: serverUrl)
             generateQRCode()
             Task { await refreshLinkedDevices() }
         }
@@ -802,7 +819,9 @@ struct PairPhonePanelView: View {
             Text(L10n.pairPanelStepScanTitle)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(theme.primaryText)
-            Text(L10n.pairPanelStepScanBody)
+            // #118: reflect that one scan pairs monitoring + workspace when the QR
+            // carries an enrollment intent (the default for an enrollable Mac).
+            Text(enroller.intent != nil ? L10n.pairPanelStepScanBodyBoth : L10n.pairPanelStepScanBody)
                 .font(.system(size: 11))
                 .foregroundColor(theme.secondaryText)
                 .multilineTextAlignment(.center)
