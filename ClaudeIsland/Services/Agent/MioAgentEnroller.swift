@@ -90,6 +90,13 @@ final class MioAgentEnroller: ObservableObject {
     var binaryExists: Bool { FileManager.default.fileExists(atPath: binaryPath) }
     var configExists: Bool { FileManager.default.fileExists(atPath: configPath) }
 
+    /// Enrollment is launchable when EITHER npx-cached OR an installed binary is
+    /// present (task #117). npx makes the GitHub-binary download optional.
+    var canEnroll: Bool {
+        if case .success = MioAgentLauncher.resolve() { return true }
+        return false
+    }
+
     // MARK: - Enroll (shell out to `mio-agent login`)
 
     /// Launch `mio-agent login --server <url> --device-name <name>`.
@@ -99,8 +106,13 @@ final class MioAgentEnroller: ObservableObject {
     ///   caller can refresh the dual QR to embed this exact intent.
     /// - Re-runnable: cancels any in-flight login first.
     func startEnrollment(serverUrl: String, deviceName: String, onIntent: @escaping (MioEnrollIntent) -> Void) {
-        guard binaryExists else {
-            phase = .failed(L10n.agentEnrollErrNoBinary)
+        // Resolve npx-cached first, installed binary as fallback (#117). If neither
+        // is available, fail with a clear message rather than silently no-op.
+        let launch: MioAgentLauncher.Launch
+        switch MioAgentLauncher.resolve() {
+        case .success(let l): launch = l
+        case .failure:
+            phase = .failed(L10n.agentEnrollErrNoLauncher)
             return
         }
         // Tear down any previous attempt cleanly.
@@ -111,8 +123,10 @@ final class MioAgentEnroller: ObservableObject {
         lastLine = ""
 
         let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: binaryPath)
-        proc.arguments = ["login", "--server", serverUrl, "--device-name", deviceName]
+        proc.executableURL = URL(fileURLWithPath: launch.executablePath)
+        proc.arguments = launch.prefixArgs + ["login", "--server", serverUrl, "--device-name", deviceName]
+        proc.environment = MioAgentLauncher.childEnvironment(for: launch)
+        Self.logger.info("Enroll via \(String(describing: launch.kind), privacy: .public) launcher: \(launch.executablePath, privacy: .public)")
 
         let outPipe = Pipe()
         let errPipe = Pipe()
@@ -124,18 +138,19 @@ final class MioAgentEnroller: ObservableObject {
         // tail of the most recent line for the UI.
         outPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
-            guard !data.isEmpty, let chunk = String(data: data, encoding: .utf8) else { return }
-            Task { @MainActor in self?.ingest(chunk, onIntent: onIntent) }
+            guard let self, !data.isEmpty, let chunk = String(data: data, encoding: .utf8) else { return }
+            Task { @MainActor in self.ingest(chunk, onIntent: onIntent) }
         }
         errPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
-            guard !data.isEmpty, let chunk = String(data: data, encoding: .utf8) else { return }
-            Task { @MainActor in self?.ingest(chunk, onIntent: onIntent) }
+            guard let self, !data.isEmpty, let chunk = String(data: data, encoding: .utf8) else { return }
+            Task { @MainActor in self.ingest(chunk, onIntent: onIntent) }
         }
 
         proc.terminationHandler = { [weak self] p in
             let code = p.terminationStatus
-            Task { @MainActor in self?.handleTermination(exitCode: code) }
+            guard let self else { return }
+            Task { @MainActor in self.handleTermination(exitCode: code) }
         }
 
         do {
@@ -147,6 +162,44 @@ final class MioAgentEnroller: ObservableObject {
         } catch {
             phase = .failed(L10n.agentEnrollErrLaunch(error.localizedDescription))
             Self.logger.error("Failed to launch mio-agent login: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    // MARK: - One QR = both (task #118)
+
+    /// Proactively create a workspace enrollment intent so the Pair-iPhone QR
+    /// carries BOTH monitoring AND workspace by default — one scan does everything.
+    ///
+    /// Called when a QR surface appears. It only starts a silent enrollment when:
+    ///   - the daemon is launchable (npx-cached or installed binary), AND
+    ///   - this Mac is NOT already enrolled (agent.json absent), AND
+    ///   - no enrollment is already in flight (idle phase, no intent), AND
+    ///   - a server URL is known.
+    /// Otherwise it is a no-op and the QR degrades to monitor-only — never blocking
+    /// the common monitoring-pair case behind workspace setup.
+    ///
+    /// `mio-agent login` long-polls the intent it prints; the phone approving the
+    /// intent embedded in the QR resolves that same poll. If the QR window closes
+    /// without a scan, the in-flight login is cancelled (see QR surface onDisappear).
+    func ensureWorkspaceIntentForQR(serverUrl: String?) {
+        guard let server = serverUrl?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !server.isEmpty else { return }
+        // NOTE: do NOT gate on `configExists`. A stale/archived enrollment (or simply wanting
+        // to re-associate to another account/workspace) must still be re-pairable by scanning —
+        // "already enrolled" is not a reason to refuse a fresh QR. Re-scanning re-associates.
+        // Already have a fresh intent or an enrollment in flight → nothing to do (avoid spawning
+        // a second login each time the QR surface re-appears in the same session).
+        guard intent == nil, phase == .idle else { return }
+        // Daemon not launchable → can't create an intent; QR stays monitor-only.
+        guard canEnroll else { return }
+
+        Self.logger.info("Auto-starting workspace enrollment for one-QR-both (#118)")
+        startEnrollment(
+            serverUrl: server,
+            deviceName: Host.current().localizedName ?? "Mac"
+        ) { _ in
+            // Intent parsed — the QR surfaces observing `intent` re-render into
+            // kind:"both" automatically.
         }
     }
 
