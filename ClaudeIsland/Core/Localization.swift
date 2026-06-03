@@ -292,6 +292,9 @@ enum L10n {
     static var pairPanelStoredLocally: String { tr("The server URL is stored locally and never leaves your Mac.", "服务器地址仅保存在本机，不会外发。") }
     static var pairPanelStepScanTitle: String { tr("Step 2 · Scan with Code Light", "第 2 步 · 用 Code Light 扫码") }
     static var pairPanelStepScanBody: String { tr("Open Code Light on iPhone and scan this QR, or enter the short code manually.", "在 iPhone 打开 Code Light，扫描下方二维码，或手动输入配对码。") }
+    /// #118: shown when the QR carries both monitoring + workspace (one scan does both).
+    static var pairPanelStepScanBodyBoth: String { tr("One scan pairs monitoring AND this workspace.", "一次扫码即可同时配对监控与本工作区。") }
+    static var pairScanCaptionBoth: String { tr("Monitoring + workspace · one scan", "监控 + 工作区 · 一次扫码") }
     static var pairPanelShortCodeLabel: String { tr("Pairing Code", "配对码") }
     static var pairPanelGeneratingCode: String { tr("Generating pairing code…", "生成配对码中…") }
     static var pairPanelLinkedDevices: String { tr("Linked Devices", "已连接设备") }
@@ -629,6 +632,7 @@ enum L10n {
     ) }
 
     // Section labels
+    static var agentSectionWorkspace: String    { tr("This workspace",         "本工作区") }
     static var agentSectionLifecycle: String    { tr("Lifecycle",              "生命周期") }
     static var agentSectionControls: String     { tr("Controls",               "控制") }
     static var agentSectionLogs: String         { tr("Logs",                   "日志") }
@@ -688,6 +692,8 @@ enum L10n {
     // Diagnostic / action messages
     static var agentDiagInstalling: String          { tr("Installing…",              "安装中…") }
     static var agentDiagBundleNotFound: String      { tr("mio-agent was not found in the app bundle.", "在应用包中未找到 mio-agent。") }
+    static var agentDiagUsingNpx: String            { tr("Using npx-cached daemon (no binary download needed)…", "使用 npx 缓存的守护进程（无需下载二进制）…") }
+    static var agentDiagSigning: String             { tr("Signing binary…",         "正在签名二进制…") }
     static var agentDiagStarting: String            { tr("Starting…",               "启动中…") }
     static var agentDiagStartSent: String           { tr("Start command sent — verify status above.", "启动命令已发送 — 请查看上方状态。") }
     static var agentDiagStopping: String            { tr("Stopping…",               "停止中…") }
@@ -715,6 +721,29 @@ enum L10n {
     static func agentLastChecked(_ time: String) -> String {
         tr("Last checked \(time)", "最后检查 \(time)")
     }
+
+    // MARK: - Workspace status panel (#117)
+
+    static var wsRowWorkspace: String   { tr("Workspace",   "工作区") }
+    static var wsRowDaemon: String      { tr("Daemon",      "守护进程") }
+    static var wsRowMonitoring: String  { tr("Monitoring",  "会话监控") }
+    static var wsRowDistribution: String { tr("Launch path", "启动方式") }
+
+    static var wsDaemonOnline: String   { tr("Online",      "在线") }
+    static var wsDaemonOffline: String  { tr("Offline",     "离线") }
+    static var wsMonitoringOn: String   { tr("Connected",   "已连接") }
+    static var wsMonitoringOff: String  { tr("Not connected", "未连接") }
+    static var wsMonitoringConnecting: String { tr("Connecting…", "连接中…") }
+
+    static var wsDistNpx: String        { tr("npx-cached",  "npx 缓存") }
+    static var wsDistBinary: String     { tr("Installed binary", "已安装二进制") }
+    static var wsDistNone: String       { tr("Not available", "不可用") }
+
+    static var wsWorkspaceUnconfigured: String { tr("Not enrolled", "未注册") }
+    static var wsDaemonHint: String { tr(
+        "Online means mio-agent is running and answering its local health check. The server marks this machine online via a 45s heartbeat.",
+        "「在线」表示 mio-agent 正在运行并通过本地健康检查。服务器通过 45 秒心跳判定此机器在线。"
+    ) }
 
     // MARK: - In-app enrollment (MioAgentEnroller / R2.1)
 
@@ -757,6 +786,10 @@ enum L10n {
     static var agentEnrollErrNoBinary: String { tr(
         "mio-agent is not installed. Install it first, then enroll.",
         "mio-agent 未安装。请先安装再注册。"
+    ) }
+    static var agentEnrollErrNoLauncher: String { tr(
+        "Cannot launch mio-agent: neither npx nor an installed binary was found. Install Node.js (npx) or use Install in Controls.",
+        "无法启动 mio-agent：既未找到 npx，也没有已安装的二进制。请安装 Node.js（npx）或在控制区点击安装。"
     ) }
     static func agentEnrollErrLaunch(_ msg: String) -> String {
         tr("Could not launch mio-agent login: \(msg)", "无法启动 mio-agent login：\(msg)")

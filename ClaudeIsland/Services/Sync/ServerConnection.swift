@@ -65,6 +65,22 @@ final class ServerConnection: ObservableObject {
     func authenticate() async throws {
         state = .authenticating
 
+        // Slock monitoring auth: PREFER the enrollment machine_token. Since Slice 7,
+        // POST /v1/auth hard-requires a user_sess_ that this machine-scoped daemon
+        // does not have. After workspace enrollment we DO hold a machine_token (in
+        // the mio-agent Keychain item), and POST /v1/auth/machine exchanges it for a
+        // monitoring device JWT + shortCode — so one QR scan sets up both universes.
+        // Fall back to the legacy device-keypair flow only when no machine_token is
+        // present (Mac not yet enrolled).
+        if let machineToken = Self.readMachineToken() {
+            do {
+                try await authenticateWithMachineToken(machineToken)
+                return
+            } catch {
+                Self.logger.error("machine_token auth failed: \(error.localizedDescription, privacy: .public) — falling back to keypair")
+            }
+        }
+
         let _ = try keyManager.getOrCreateIdentityKey()
 
         let challenge = UUID().uuidString
@@ -100,6 +116,72 @@ final class ServerConnection: ObservableObject {
         } else {
             state = .error("No token received")
         }
+    }
+
+    /// Read the enrollment machine_token from the mio-agent Keychain item.
+    /// mio-agent stores it via `security add-generic-password` with NO app ACL
+    /// (`-T`), so the only trusted app is `/usr/bin/security` itself — any
+    /// same-user process reading through `security find-generic-password`
+    /// succeeds WITHOUT a Keychain prompt. The token never touches logs.
+    private static func readMachineToken() -> String? {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        task.arguments = ["find-generic-password",
+                          "-s", "io.miomioos.mio-agent",
+                          "-a", "machine_token",
+                          "-w"]
+        let out = Pipe()
+        task.standardOutput = out
+        task.standardError = Pipe()
+        do {
+            try task.run()
+            task.waitUntilExit()
+            guard task.terminationStatus == 0 else { return nil }
+            let data = out.fileHandleForReading.readDataToEndOfFile()
+            let tok = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return (tok?.isEmpty == false) ? tok : nil
+        } catch {
+            return nil
+        }
+    }
+
+    /// Exchange a machine_token for a monitoring device JWT + shortCode via
+    /// POST /v1/auth/machine. On success sets token / deviceId / shortCode and
+    /// persists the JWT to the Keychain (same slot the keypair flow uses).
+    private func authenticateWithMachineToken(_ machineToken: String) async throws {
+        let url = URL(string: "\(serverUrl)/v1/auth/machine")!
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(machineToken)", forHTTPHeaderField: "Authorization")
+        req.httpBody = Data("{}".utf8)
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw NSError(domain: "ServerConnection", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: "no http response"])
+        }
+        guard http.statusCode == 200 else {
+            throw NSError(domain: "ServerConnection", code: http.statusCode,
+                          userInfo: [NSLocalizedDescriptionKey: "machine auth http \(http.statusCode)"])
+        }
+
+        struct MachineAuthResponse: Decodable {
+            let token: String?
+            let deviceId: String?
+            let shortCode: String?
+        }
+        let parsed = try JSONDecoder().decode(MachineAuthResponse.self, from: data)
+        guard let t = parsed.token else {
+            throw NSError(domain: "ServerConnection", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: "machine auth returned no token"])
+        }
+        self.token = t
+        self.deviceId = parsed.deviceId
+        if let sc = parsed.shortCode { self.shortCode = sc }
+        try keyManager.storeToken(t, forServer: serverUrl)
+        Self.logger.info("Authenticated via machine_token with \(self.serverUrl), shortCode=\(self.shortCode ?? "nil", privacy: .public)")
     }
 
     // MARK: - Socket.io Connection

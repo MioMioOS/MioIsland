@@ -105,16 +105,37 @@ final class MioAgentEnroller: ObservableObject {
     /// - `onIntent` fires once the `mio://enroll/...` deeplink is parsed, so the
     ///   caller can refresh the dual QR to embed this exact intent.
     /// - Re-runnable: cancels any in-flight login first.
-    func startEnrollment(serverUrl: String, deviceName: String, onIntent: @escaping (MioEnrollIntent) -> Void) {
+    // Retry bookkeeping: npx is flaky when spawned from the GUI app's launchd env
+    // (exits 1 with no usable error, unreproducible from a shell), while the installed
+    // SEA binary is reliable. If an npx login fails WITHOUT producing an intent, we retry
+    // once with the binary (see handleTermination). These remember the in-flight params.
+    private var lastServerUrl: String?
+    private var lastDeviceName: String?
+    private var lastOnIntent: ((MioEnrollIntent) -> Void)?
+    private var lastLaunchKind: MioAgentLauncher.Launch.Kind?
+    private var triedBinaryFallback = false
+
+    func startEnrollment(serverUrl: String, deviceName: String, forceBinary: Bool = false, onIntent: @escaping (MioEnrollIntent) -> Void) {
         // Resolve npx-cached first, installed binary as fallback (#117). If neither
         // is available, fail with a clear message rather than silently no-op.
+        // `forceBinary` skips npx entirely (used by the post-failure retry).
         let launch: MioAgentLauncher.Launch
-        switch MioAgentLauncher.resolve() {
-        case .success(let l): launch = l
-        case .failure:
-            phase = .failed(L10n.agentEnrollErrNoLauncher)
-            return
+        if forceBinary, FileManager.default.isExecutableFile(atPath: MioAgentLauncher.installedBinaryPath) {
+            launch = MioAgentLauncher.Launch(kind: .binary, executablePath: MioAgentLauncher.installedBinaryPath, prefixArgs: [], toolchainDir: nil)
+        } else {
+            switch MioAgentLauncher.resolve() {
+            case .success(let l): launch = l
+            case .failure:
+                phase = .failed(L10n.agentEnrollErrNoLauncher)
+                return
+            }
         }
+        // Remember params so a failed npx attempt can retry on the binary.
+        lastServerUrl = serverUrl
+        lastDeviceName = deviceName
+        lastOnIntent = onIntent
+        lastLaunchKind = launch.kind
+        if !forceBinary { triedBinaryFallback = false }
         // Tear down any previous attempt cleanly.
         cancelEnrollment()
 
@@ -279,6 +300,19 @@ final class MioAgentEnroller: ObservableObject {
             phase = .succeeded
             Self.logger.info("mio-agent login succeeded — Keychain + agent.json written by the binary")
         } else {
+            // npx is flaky from the GUI app's launchd env (exits non-zero without ever
+            // printing the deeplink). If THIS attempt was npx, produced NO intent, and a
+            // reliable installed binary exists, retry once on the binary before failing.
+            if intent == nil,
+               lastLaunchKind == .npx,
+               !triedBinaryFallback,
+               FileManager.default.isExecutableFile(atPath: MioAgentLauncher.installedBinaryPath),
+               let s = lastServerUrl, let n = lastDeviceName, let cb = lastOnIntent {
+                triedBinaryFallback = true
+                phase = .idle
+                startEnrollment(serverUrl: s, deviceName: n, forceBinary: true, onIntent: cb)
+                return
+            }
             // Prefer the captured tail (login prints a human-readable error on
             // its last line for timeouts / 403 / network errors).
             let detail = lastLine.isEmpty ? L10n.agentEnrollErrExit(exitCode) : lastLine
