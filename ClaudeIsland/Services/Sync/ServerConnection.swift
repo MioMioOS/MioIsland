@@ -65,57 +65,26 @@ final class ServerConnection: ObservableObject {
     func authenticate() async throws {
         state = .authenticating
 
-        // Slock monitoring auth: PREFER the enrollment machine_token. Since Slice 7,
-        // POST /v1/auth hard-requires a user_sess_ that this machine-scoped daemon
-        // does not have. After workspace enrollment we DO hold a machine_token (in
-        // the mio-agent Keychain item), and POST /v1/auth/machine exchanges it for a
-        // monitoring device JWT + shortCode — so one QR scan sets up both universes.
-        // Fall back to the legacy device-keypair flow only when no machine_token is
-        // present (Mac not yet enrolled).
-        if let machineToken = Self.readMachineToken() {
-            do {
-                try await authenticateWithMachineToken(machineToken)
-                return
-            } catch {
-                Self.logger.error("machine_token auth failed: \(error.localizedDescription, privacy: .public) — falling back to keypair")
-            }
+        // Account-only identity contract (2026-06-03): the Mac authenticates and
+        // pushes as an OWNERLESS computer. Its only monitoring identity is the
+        // enrollment machine_token (in the mio-agent Keychain item); POST
+        // /v1/auth/machine exchanges it for a monitoring device JWT + shortCode.
+        // The returned computer carries NO owner — ownership lives solely in the
+        // server-side AccountComputerLink, established later by a phone scan — so
+        // this code must not expect or rely on any per-account device ownership.
+        //
+        // The legacy device-keypair /v1/auth flow is gone: under the contract
+        // /v1/auth hard-requires a user_sess_ this machine-scoped daemon never
+        // holds, and it bound Device.userId to a single owner — exactly the
+        // per-account ownership the refactor retires. A Mac with no machine_token
+        // is simply not enrolled and cannot do ownerless monitoring auth.
+        guard let machineToken = Self.readMachineToken() else {
+            state = .error("Not enrolled (no machine_token); cannot authenticate as an ownerless computer")
+            throw NSError(domain: "ServerConnection", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: "no machine_token: Mac not enrolled"])
         }
 
-        let _ = try keyManager.getOrCreateIdentityKey()
-
-        let challenge = UUID().uuidString
-        let challengeData = Data(challenge.utf8)
-        let signature = try keyManager.sign(challengeData)
-        let publicKey = try keyManager.publicKeyBase64()
-
-        let request = AuthRequest(
-            publicKey: publicKey,
-            challenge: challengeData.base64EncodedString(),
-            signature: signature.base64EncodedString()
-        )
-
-        let url = URL(string: "\(serverUrl)/v1/auth")!
-        var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.httpBody = try JSONEncoder().encode(request)
-
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
-
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            state = .error("Auth failed")
-            return
-        }
-
-        let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
-        if let t = authResponse.token {
-            self.token = t
-            self.deviceId = authResponse.deviceId
-            try keyManager.storeToken(t, forServer: serverUrl)
-            Self.logger.info("Authenticated with \(self.serverUrl)")
-        } else {
-            state = .error("No token received")
-        }
+        try await authenticateWithMachineToken(machineToken)
     }
 
     /// Read the enrollment machine_token from the mio-agent Keychain item.
@@ -148,7 +117,14 @@ final class ServerConnection: ObservableObject {
 
     /// Exchange a machine_token for a monitoring device JWT + shortCode via
     /// POST /v1/auth/machine. On success sets token / deviceId / shortCode and
-    /// persists the JWT to the Keychain (same slot the keypair flow uses).
+    /// persists the JWT to the Keychain.
+    ///
+    /// Account-only identity contract (§2.6): the response shape is unchanged —
+    /// `{ success, token, deviceId, shortCode, expiresInDays }` — but the computer
+    /// is now OWNERLESS. The device JWT is a non-identity push/transport handle
+    /// only (its `userId` claim may be empty), so we read just token / deviceId /
+    /// shortCode and make NO assumption that an owner came back. The shortCode is
+    /// the monitor_code the dual QR embeds (carried via SyncManager.shortCode).
     private func authenticateWithMachineToken(_ machineToken: String) async throws {
         let url = URL(string: "\(serverUrl)/v1/auth/machine")!
         var req = URLRequest(url: url)
