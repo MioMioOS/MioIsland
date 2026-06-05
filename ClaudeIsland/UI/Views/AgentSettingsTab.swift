@@ -532,8 +532,14 @@ struct AgentSettingsTab: View {
         // which is correct since we bootstrap/kickstart/bootout into gui/$uid.
         let launchLoaded = binExists ? await shellCheck("/bin/launchctl", args: ["list", launchLabel]) : false
 
-        // Process running via pgrep
-        let procRunning = await shellCheck("/usr/bin/pgrep", args: ["-x", "mio-agent"])
+        // Process running via pgrep. Match the full command line ("-f") for
+        // "mio-agent run" rather than an exact process name ("-x mio-agent"):
+        // under the npx launch path the daemon runs as `node …/mio-agent run`
+        // (and its parent `npm exec …`), so `-x mio-agent` never matched it and
+        // the tab wrongly showed the daemon "stopped/offline" while it was
+        // actually running + healthy. "… run" keeps it specific enough to avoid
+        // matching unrelated processes that merely mention "mio-agent".
+        let procRunning = await shellCheck("/usr/bin/pgrep", args: ["-f", "mio-agent run"])
 
         // Health endpoint (only meaningful when process is running)
         let healthResult = procRunning ? await pingHealth() : (reachable: false, error: nil as String?)
