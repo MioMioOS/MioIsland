@@ -122,10 +122,40 @@ enum MioAgentLauncher {
         let home = fm.homeDirectoryForCurrentUser.path
         candidates.append("\(home)/.volta/bin/npx")
 
+        // Require a MODERN npx (npm ≥ 7). npm 6's npx mis-resolves
+        // `npx -y <pkg> <subcmd>`: instead of passing <subcmd> to the package's
+        // bin, it treats it as a standalone command — so `login` fell through to
+        // the system `/usr/bin/login` ("usage: login -f …") and `run` installed
+        // and ran the unrelated `runjs` package. A stale /usr/local/bin/npx from
+        // an old global npm 6 install otherwise wins over the user's modern
+        // (nvm/Homebrew) npx and silently breaks enrollment + the daemon.
         for path in candidates where fm.isExecutableFile(atPath: path) {
+            guard npxMajorVersion(path) >= 7 else { continue }
             return (path, (path as NSString).deletingLastPathComponent)
         }
         return nil
+    }
+
+    /// Major version reported by `<npx> --version` (which prints the npm
+    /// version, e.g. "10.8.2" or "6.14.11"), or 0 if it can't be determined.
+    /// Used to reject npm 6's broken npx (see `findNpx`).
+    private static func npxMajorVersion(_ path: String) -> Int {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: path)
+        p.arguments = ["--version"]
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = FileHandle.nullDevice
+        do {
+            try p.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            p.waitUntilExit()
+            let out = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return out.split(separator: ".").first.flatMap { Int($0) } ?? 0
+        } catch {
+            return 0
+        }
     }
 
     /// Descending semver comparison for nvm version directory names like "v22.22.0".
