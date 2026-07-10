@@ -1005,61 +1005,19 @@ struct InstanceRow: View {
 
     /// Send an option selection to the session's terminal
     private func sendOptionToTerminal(index: Int, session: SessionState) async {
-        let termApp = session.terminalApp?.lowercased() ?? ""
-
-        // Try AppleScript for iTerm2 / Terminal.app / Ghostty
-        if termApp.contains("iterm") {
-            let script = """
-            tell application "iTerm2"
-                tell current session of current tab of current window
-                    write text "\(index)"
-                end tell
-            end tell
-            """
-            if runAppleScript(script) {
-                DebugLogger.log("AskUser", "Sent via iTerm2")
-                return
-            }
-        }
-
-        if termApp.contains("terminal") && !termApp.contains("wez") {
-            let script = """
-            tell application "Terminal"
-                do script "\(index)" in selected tab of front window
-            end tell
-            """
-            if runAppleScript(script) {
-                DebugLogger.log("AskUser", "Sent via Terminal.app")
-                return
-            }
-        }
-
-        // cmux — native AppleScript: send text directly to the terminal
-        guard CmuxTreeParser.isAvailable else {
-            DebugLogger.log("AskUser", "No supported terminal, jumping")
-            await TerminalJumper.shared.jump(to: session)
+        // Unified relay — TerminalWriter covers cmux (precise target),
+        // iTerm2, Ghostty and Terminal.app, all with hard timeouts. The old
+        // bespoke ladder here only knew iTerm/Terminal/cmux, so option taps
+        // did nothing for Ghostty/Warp/… users without cmux (issue #44).
+        if await TerminalWriter.shared.sendText("\(index)", to: session) {
+            DebugLogger.log("AskUser", "Sent option \(index) via TerminalWriter")
             return
         }
 
-        DebugLogger.log("AskUser", "Sending '\(index)' to cmux terminal cwd=\(session.cwd)")
-        let sent = await CmuxTreeParser.sendText("\(index)\r", toCwd: session.cwd)
-        DebugLogger.log("AskUser", "Sent: \(sent)")
-    }
-
-    private func runAppleScript(_ script: String) -> Bool {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script]
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus == 0
-        } catch {
-            return false
-        }
+        // Couldn't inject the keystroke — at least bring the terminal
+        // forward so the user can answer by hand.
+        DebugLogger.log("AskUser", "No supported terminal, jumping")
+        await TerminalJumper.shared.jump(to: session)
     }
 
     // MARK: - Subtitle
