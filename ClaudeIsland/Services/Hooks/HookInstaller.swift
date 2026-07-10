@@ -9,6 +9,15 @@ import Foundation
 
 struct HookInstaller {
 
+    /// True when the user explicitly switched hooks off (Settings toggle or
+    /// diagnostics "uninstall"). Launch-time install and the auto-heal
+    /// watcher (ClaudeSettingsWatcher) both respect this so we never fight
+    /// an intentional opt-out.
+    static var userDisabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "hookInstallUserDisabled") }
+        set { UserDefaults.standard.set(newValue, forKey: "hookInstallUserDisabled") }
+    }
+
     /// Install hook script and update settings.json on app launch
     static func installIfNeeded() {
         cleanupLegacyHooks()

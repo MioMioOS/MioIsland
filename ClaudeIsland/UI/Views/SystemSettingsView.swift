@@ -835,9 +835,13 @@ private struct GeneralTab: View {
                 ) {
                     IOSToggle(isOn: hooksInstalled) {
                         if hooksInstalled {
+                            // Remember the opt-out so launch install and the
+                            // settings watcher don't silently re-add hooks.
+                            HookInstaller.userDisabled = true
                             HookInstaller.uninstall()
                             hooksInstalled = false
                         } else {
+                            HookInstaller.userDisabled = false
                             HookInstaller.installIfNeeded()
                             hooksInstalled = true
                         }

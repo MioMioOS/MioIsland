@@ -43,7 +43,12 @@ import UserNotifications
             return
         }
 
-        HookInstaller.installIfNeeded()
+        if !HookInstaller.userDisabled {
+            HookInstaller.installIfNeeded()
+        }
+        // Keep hooks alive across settings.json rewrites (ccswitch etc. —
+        // issues #66/#93). No-ops while the user has hooks switched off.
+        ClaudeSettingsWatcher.shared.start()
         CodexFeatureGate.shared.onLaunch()
         logHookHealth()
 

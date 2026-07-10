@@ -236,12 +236,16 @@ struct HookDiagnosticsView: View {
     }
 
     private func reinstallClaude() {
+        HookInstaller.userDisabled = false
         HookInstaller.uninstall()
         HookInstaller.installIfNeeded()
         refresh()
     }
 
     private func uninstallClaude() {
+        // Explicit user opt-out — stop launch install / auto-heal from
+        // re-adding the hooks behind their back.
+        HookInstaller.userDisabled = true
         HookInstaller.uninstall()
         refresh()
     }
