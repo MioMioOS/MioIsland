@@ -127,10 +127,14 @@ def main():
         sys.exit(0)
     tool_input = data.get("tool_input", {})
 
-    # Detect Codex by checking the parent process name.
-    # Both Claude Code and Codex now send "model" and "permission_mode",
-    # so payload fields are unreliable. The parent process is the CLI binary itself.
-    is_codex = _is_parent_codex()
+    # Detect Codex. Payload fields like "model"/"permission_mode" exist on
+    # both CLIs, so:
+    #   1) transcript_path under ~/.codex/ is definitive — and keeps working
+    #      when Codex spawns hooks through a shell wrapper, where the
+    #      parent-process check sees "sh" instead of "codex" (issue #84);
+    #   2) otherwise fall back to the parent process name.
+    transcript_path = data.get("transcript_path", "") or ""
+    is_codex = "/.codex/" in transcript_path or _is_parent_codex()
 
     # Get process info
     claude_pid = os.getppid()
@@ -166,7 +170,6 @@ def main():
     # For Codex sessions, pass source marker and transcript path
     if is_codex:
         state["source"] = "codex"
-        transcript_path = data.get("transcript_path", "")
         if transcript_path:
             state["transcript_path"] = transcript_path
 
