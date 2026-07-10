@@ -194,13 +194,29 @@ actor SessionStore {
                let termInfo = tree[termPid] {
                 let command = URL(fileURLWithPath: termInfo.command).lastPathComponent
                 session.terminalApp = TerminalAppRegistry.displayName(for: command)
+                // Resolve the terminal's bundle id too — lets the jumper
+                // activate IDE-style hosts (VS Code, Cursor, …) directly
+                // instead of probing unrelated terminals (issue #80).
+                if session.hostAppBundleId == nil {
+                    session.hostAppBundleId = HostAppResolver.hostApp(startingAt: termPid, tree: tree)?.bundleId
+                }
+            }
+            // Registry miss — Claude may live inside an app we don't list
+            // as a terminal (Obsidian's terminal plugin, JetBrains IDEs,
+            // the Claude desktop app…). Walk the ancestry to the nearest
+            // regular GUI app so "go to terminal" activates the real host
+            // instead of a random terminal (issue #94).
+            if session.terminalApp == nil,
+               let host = HostAppResolver.hostApp(startingAt: pid, tree: tree) {
+                session.terminalApp = host.name
+                session.hostAppBundleId = host.bundleId
             }
             // Fall back to env-detected terminal hint from hook script
             if session.terminalApp == nil {
                 session.terminalApp = event.terminalApp
             }
             if isNewSession {
-                DebugLogger.log("Hook", "pid=\(pid) tmux=\(session.isInTmux) termApp=\(session.terminalApp ?? "nil")")
+                DebugLogger.log("Hook", "pid=\(pid) tmux=\(session.isInTmux) termApp=\(session.terminalApp ?? "nil") host=\(session.hostAppBundleId ?? "nil")")
             }
         }
         if let tty = event.tty {

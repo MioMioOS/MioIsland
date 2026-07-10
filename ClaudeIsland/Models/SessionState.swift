@@ -24,6 +24,12 @@ struct SessionState: Equatable, Identifiable, Sendable {
     var isInTmux: Bool
     /// Detected terminal app name (e.g., "Ghostty", "Warp", "iTerm2", "cmux", "Terminal")
     var terminalApp: String?
+    /// Bundle id of the GUI app that actually hosts the session — either the
+    /// registered terminal's own bundle, or (registry miss) the nearest
+    /// regular-app ancestor such as Obsidian, a JetBrains IDE or the Claude
+    /// desktop app. Lets the jumper activate the real host instead of
+    /// probing unrelated terminals (issues #94 / #80).
+    var hostAppBundleId: String?
     /// cmux workspace/surface IDs captured by the hook script from its own
     /// `os.environ` (inherited from claude → cmux shell). The only reliable
     /// way to read these — `ps -E` on macOS hides env vars of hardened-runtime

@@ -73,6 +73,16 @@ actor TerminalJumper {
             if await activateByBundleId("hyper") { return true }
         }
 
+        // 2.5 The ancestry resolved a concrete host app (Obsidian, JetBrains
+        //     IDEs, the Claude desktop app, VS Code…) — activate it directly
+        //     instead of probing unrelated terminals below (issues #94/#80).
+        if let hostBundleId = session.hostAppBundleId, !hostBundleId.isEmpty {
+            if activateRunningApp(bundleId: hostBundleId) {
+                DebugLogger.log("Jump", "activated host app \(hostBundleId)")
+                return true
+            }
+        }
+
         // 3. If terminal app unknown OR all specific strategies failed,
         //    probe common terminals — but ONLY the ones that are actually running.
         //    Previously this block ran `jumpViaCmux` unconditionally even when
