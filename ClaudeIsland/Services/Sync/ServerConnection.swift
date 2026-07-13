@@ -297,12 +297,24 @@ final class ServerConnection: ObservableObject {
 
     /// Send a session message (encrypted content) to the server
     func sendMessage(sessionId: String, content: String, localId: String? = nil) {
-        guard isConnected else { return }
+        guard isConnected else {
+            // OPT-09: dropping upstream messages silently is how "the phone
+            // never saw the reply" stays undiagnosable. Leave a file trace.
+            DebugLogger.log("Relay", "upstream message dropped (not connected) sid=\(sessionId.prefix(8)) localId=\(localId?.prefix(12).description ?? "-")")
+            return
+        }
 
         var payload: [String: Any] = ["sid": sessionId, "message": content]
         if let localId { payload["localId"] = localId }
 
-        socket?.emitWithAck("message", payload).timingOut(after: 30) { _ in }
+        socket?.emitWithAck("message", payload).timingOut(after: 30) { data in
+            // Socket.IO delivers ["NO ACK"] when the server didn't ack in
+            // time (SocketAckStatus.noAck). That's an upstream message the
+            // phone will never see — record it instead of ignoring.
+            if let status = data.first as? String, status == "NO ACK" {
+                DebugLogger.log("Relay", "upstream message ack timeout sid=\(sessionId.prefix(8)) localId=\(localId?.prefix(12).description ?? "-")")
+            }
+        }
     }
 
     /// Send session-alive heartbeat

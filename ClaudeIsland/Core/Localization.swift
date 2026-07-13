@@ -351,6 +351,18 @@ enum L10n {
         tr("Active", "已激活")
     }
 
+    /// Active with no expiry — the lifetime IAP. Distinct wording so a
+    /// paying user sees their purchase reflected, not a vague "Active".
+    static var subscriptionActiveLifetimeBanner: String {
+        tr("Activated (Lifetime)", "已激活(终身)")
+    }
+
+    /// Lifetime unlocked through a linked iPhone's purchase
+    /// (server reason `inherited_from_phone_paid`).
+    static var subscriptionActiveInheritedBanner: String {
+        tr("Unlocked via iPhone (Lifetime)", "已随 iPhone 解锁(终身)")
+    }
+
     /// Trial expired. Banner is red; the redeem disclosure right below
     /// is the call-to-action — banner doesn't need to repeat the prompt.
     static var subscriptionExpiredBanner: String {
@@ -365,6 +377,32 @@ enum L10n {
 
     static var subscriptionRefreshTooltip: String {
         tr("Refresh status", "刷新状态")
+    }
+
+    // Phone-message failure surfacing (OPT-08/09) — the phone shows
+    // "delivered", so the Mac MUST speak up when injection fails.
+
+    static var phoneMessageFailedTitle: String {
+        tr("iPhone message couldn't reach the terminal", "iPhone 消息未能送入终端")
+    }
+
+    static var phoneMsgFailInject: String {
+        tr("The message arrived from your iPhone but couldn't be typed into the terminal. Check Settings → Phone → cmux Connection.",
+           "已收到 iPhone 消息,但没能注入终端。请到 设置 → 手机 → cmux 连接 检查状态。")
+    }
+
+    static var phoneMsgFailNoSession: String {
+        tr("A message arrived from your iPhone but no matching Claude session was found on this Mac.",
+           "已收到 iPhone 消息,但本机没有找到对应的 Claude 会话。")
+    }
+
+    /// OPT-10: shown on the Automation permission row when an upstream
+    /// prerequisite (cmux binary / a live cmux target) is missing — the
+    /// permission is NOT what's blocking, don't send users down the TCC
+    /// rabbit hole.
+    static var automationNotTheBlocker: String {
+        tr("Not the blocker — fix the items above first",
+           "与当前问题无关——先解决上面未通过的项")
     }
 
     // Error messages — keys mirror the server's stable `error` field.

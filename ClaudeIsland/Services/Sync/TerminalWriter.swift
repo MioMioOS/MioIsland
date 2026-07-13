@@ -300,9 +300,11 @@ final class TerminalWriter {
     func testSendDiagnostic() async -> (ok: Bool, detail: String) {
         let probe = await probeConnection()
         guard probe.cmuxBinaryInstalled else {
+            DebugLogger.log("TestSend", "FAILED: cmux binary not installed")
             return (false, L10n.cmuxBinaryMissing)
         }
         guard let (wsId, surfId) = probe.testTarget else {
+            DebugLogger.log("TestSend", "FAILED: no cmux-hosted Claude target (sessions=\(probe.claudeSessionCount))")
             return (false, L10n.testSendNoTarget)
         }
         // Deliberately empty-ish payload that won't spam the user's terminal:
@@ -312,8 +314,11 @@ final class TerminalWriter {
         args += ["--", "# CodeIsland probe\r"]
         let result = await cmuxRun(args)
         if result != nil {
+            DebugLogger.log("TestSend", "ok ws=\(wsId.prefix(8)) surf=\(surfId?.prefix(8).description ?? "-")")
             return (true, "\(L10n.testSendSuccess) — ws=\(wsId.prefix(8)) surf=\(surfId?.prefix(8).description ?? "-")")
         } else {
+            // cmuxRun already logged the timeout/non-zero exit detail ([Shell]).
+            DebugLogger.log("TestSend", "FAILED: cmux send returned error ws=\(wsId.prefix(8)) surf=\(surfId?.prefix(8).description ?? "-")")
             return (false, L10n.testSendFailed)
         }
     }

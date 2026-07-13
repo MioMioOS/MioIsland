@@ -1567,7 +1567,7 @@ private struct CmuxConnectionTab: View {
                     icon: "gearshape.2",
                     title: L10n.automationRowTitle,
                     ok: probe?.automationGranted,
-                    detail: probe?.automationDetail ?? L10n.automationUnknown
+                    detail: automationRowDetail
                 )
                 statusRow(
                     icon: "person.crop.rectangle.stack",
@@ -1696,6 +1696,18 @@ private struct CmuxConnectionTab: View {
             .background(RoundedRectangle(cornerRadius: 7).fill(Theme.accent))
         }
         .buttonStyle(.plain)
+    }
+
+    /// OPT-10: the raw automation detail ("cmux — not yet prompted") sent a
+    /// user chasing TCC permissions when the actual blocker was upstream
+    /// (no cmux binary / no live cmux-hosted Claude). When a prerequisite
+    /// row above is already red, say so instead of leading them astray.
+    private var automationRowDetail: String {
+        guard let p = probe else { return L10n.automationUnknown }
+        if !p.cmuxBinaryInstalled || p.testTarget == nil {
+            return L10n.automationNotTheBlocker
+        }
+        return p.automationDetail
     }
 
     private func requestAutomation() async {

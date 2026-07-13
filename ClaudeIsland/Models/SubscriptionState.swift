@@ -125,18 +125,20 @@ extension SubscriptionState {
     }
 
     /// GET /v1/subscription/status `reason` → unified `source` semantic.
-    /// Server values per doc 2.5:
-    ///   `mac_redeemed`         → this Mac activated a code itself
-    ///   `inherited_from_phone` → trial belongs to a linked iPhone
-    ///   `mac_device`           → status:'none' short-circuit
-    /// Anything else maps to nil — caller treats unknown source as "no
-    /// special tag" rather than guessing.
+    /// Server values per doc 2.5 (+ ISS-06 server fix, 2026-07):
+    ///   `mac_redeemed`               → this Mac activated a code itself
+    ///   `inherited_from_phone`       → trial belongs to a linked iPhone
+    ///   `inherited_from_phone_paid`  → linked iPhone owns the lifetime IAP
+    ///   `mac_device`                 → status:'none' short-circuit
+    /// Prefix-match the inherited family so future server variants
+    /// (e.g. `_paid`) keep tagging correctly. Anything else maps to nil —
+    /// caller treats unknown source as "no special tag" rather than guessing.
     private static func mapReasonToSource(_ reason: String) -> String? {
+        if reason.hasPrefix("inherited_from_phone") { return "inherited" }
         switch reason {
-        case "mac_redeemed":         return "redeem_code"
-        case "inherited_from_phone": return "inherited"
-        case "mac_device":           return nil
-        default:                     return nil
+        case "mac_redeemed": return "redeem_code"
+        case "mac_device":   return nil
+        default:             return nil
         }
     }
 

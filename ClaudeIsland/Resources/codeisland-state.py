@@ -57,6 +57,11 @@ def detect_terminal_app():
         return "Zellij"
     if env.get("TMUX"):
         return "tmux"
+    # cmux before Ghostty: cmux is Ghostty-based and exports
+    # TERM_PROGRAM=ghostty, so the Ghostty branch below would otherwise
+    # shadow this check forever (OPT-11 — was dead code at the bottom).
+    if env.get("CMUX_SOCKET_PATH"):
+        return "cmux"
     # Then outer terminal emulator
     if env.get("GHOSTTY_RESOURCES_DIR") or env.get("TERM_PROGRAM") == "ghostty":
         return "Ghostty"

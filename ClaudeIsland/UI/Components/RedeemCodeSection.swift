@@ -125,7 +125,10 @@ struct RedeemCodeSection: View {
 
     private enum BannerKind {
         case trial(daysLeft: Int)
-        case active             // lifetime / paid subscription
+        /// lifetime / paid subscription. `lifetime` = no expiry at all
+        /// (permanent IAP); `inherited` = the linked iPhone owns the
+        /// purchase (server reason `inherited_from_phone_paid`).
+        case active(lifetime: Bool, inherited: Bool)
         case expired
         case none
 
@@ -140,7 +143,10 @@ struct RedeemCodeSection: View {
         var label: String {
             switch self {
             case .trial(let d): return L10n.subscriptionTrialBanner(daysLeft: d)
-            case .active:       return L10n.subscriptionActiveBanner
+            case .active(let lifetime, let inherited):
+                if inherited { return L10n.subscriptionActiveInheritedBanner }
+                return lifetime ? L10n.subscriptionActiveLifetimeBanner
+                                : L10n.subscriptionActiveBanner
             case .expired:      return L10n.subscriptionExpiredBanner
             case .none:         return L10n.subscriptionNoneBanner
             }
@@ -157,7 +163,12 @@ struct RedeemCodeSection: View {
                 }
                 return .expired
             case .active:
-                return .active
+                // Lifetime = active with no expiry (server omits expiresAt
+                // and daysLeft for permanent unlocks — ISS-06 server fix).
+                return .active(
+                    lifetime: sub.expiresAt == nil && sub.daysLeft == nil,
+                    inherited: sub.source == "inherited"
+                )
             case .expired:
                 return .expired
             case .none:

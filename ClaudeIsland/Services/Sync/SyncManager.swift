@@ -287,8 +287,15 @@ final class SyncManager: ObservableObject {
             if let uuid = targetUuid {
                 let ok = await TerminalWriter.shared.sendControlKey(controlKey, claudeUuid: uuid, cwd: cwd, livePid: livePid, cmuxWorkspaceId: cmuxWsId, cmuxSurfaceId: cmuxSurfId, terminalApp: trackedSession?.terminalApp)
                 Self.logger.info("Phone control key '\(controlKey, privacy: .public)' (uuid=\(uuid.prefix(8), privacy: .public) pid=\(livePid?.description ?? "nil", privacy: .public)) → \(ok ? "success" : "failed")")
+                if !ok {
+                    PhoneMessageFailureNotifier.notify(
+                        reason: "control-key",
+                        detail: "\(L10n.phoneMsgFailInject) [key=\(controlKey) uuid=\(uuid.prefix(8)) term=\(trackedSession?.terminalApp ?? "?")]"
+                    )
+                }
             } else {
                 Self.logger.warning("Control key dropped: no target uuid")
+                PhoneMessageFailureNotifier.notify(reason: "no-session", detail: L10n.phoneMsgFailNoSession)
             }
             return
         }
@@ -313,10 +320,17 @@ final class SyncManager: ObservableObject {
             }
             if images.isEmpty {
                 Self.logger.warning("No images could be downloaded — falling back to text-only")
+                DebugLogger.log("PhoneMsg", "image blobs failed to download (\(imageBlobIds.count)) — falling back to text-only")
             } else {
                 let ok = await TerminalWriter.shared.sendImagesAndText(images: images, text: parsedText, claudeUuid: targetUuid, cwd: cwd, livePid: livePid, cmuxWorkspaceId: cmuxWsId, cmuxSurfaceId: cmuxSurfId, terminalApp: trackedSession?.terminalApp)
                 if ok { recordPhoneInjection(claudeUuid: targetUuid, text: parsedText) }
                 Self.logger.info("Phone message with \(images.count) image(s) → terminal: \(ok ? "success" : "failed")")
+                if !ok {
+                    PhoneMessageFailureNotifier.notify(
+                        reason: "image-inject",
+                        detail: "\(L10n.phoneMsgFailInject) [images=\(images.count) uuid=\(targetUuid.prefix(8)) term=\(trackedSession?.terminalApp ?? "?")]"
+                    )
+                }
                 return
             }
         }
@@ -355,10 +369,20 @@ final class SyncManager: ObservableObject {
             )
             if sent { recordPhoneInjection(claudeUuid: uuid, text: parsedText) }
             Self.logger.info("Phone message → terminal (uuid=\(uuid.prefix(8), privacy: .public) pid=\(livePid?.description ?? "nil", privacy: .public)): \(sent ? "success" : "failed")")
+            if !sent {
+                PhoneMessageFailureNotifier.notify(
+                    reason: "text-inject",
+                    detail: "\(L10n.phoneMsgFailInject) [uuid=\(uuid.prefix(8)) term=\(termApp ?? "?") pid=\(livePid?.description ?? "-")]"
+                )
+            }
             return
         }
 
         Self.logger.warning("Phone message dropped: no local session and no uuid for serverId=\(serverSessionId, privacy: .public)")
+        PhoneMessageFailureNotifier.notify(
+            reason: "no-session",
+            detail: "\(L10n.phoneMsgFailNoSession) [serverId=\(serverSessionId.prefix(8))]"
+        )
     }
 
     // MARK: - Capability Upload
