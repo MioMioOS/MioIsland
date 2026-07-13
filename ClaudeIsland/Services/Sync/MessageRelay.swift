@@ -21,12 +21,25 @@ final class MessageRelay {
     private var aliveTimers: [String: Timer] = [:]
     private var knownSessionIds = Set<String>()
 
-    /// Track how many chat items we've already synced per session
-    private var syncedItemCounts: [String: Int] = [:]
-
     /// Last serialized content sent to server, keyed by session+item id.
-    /// Used to detect tool status mutations (running→success) that need re-sync.
+    /// Used both as the "already synced" set for incremental sync AND to
+    /// detect tool status mutations (running→success) that need re-sync.
+    ///
+    /// v3.1.1: this replaced the old `syncedItemCounts` count cursor. A
+    /// count cursor assumes chatItems is append-only, but /clear
+    /// reconciliation, compact and history rebuilds SHRINK the array —
+    /// the cursor then points past the end and every new message is
+    /// silently dropped forever (field report: phone saw the injected
+    /// message land in cmux but never saw Claude's reply; local log
+    /// showed `items=7 synced=8`). Identity-based sync is immune to
+    /// shrink/reorder by construction.
     private var syncedItemContents: [String: [String: String]] = [:]
+
+    /// Sentinel stored in `syncedItemContents` for phone-injected user
+    /// messages we deliberately did NOT relay (echo suppression). Marks
+    /// the item as handled so later ticks don't re-consume the
+    /// injection record and accidentally round-trip the echo.
+    private static let echoSuppressedMarker = "\u{1}echo-suppressed"
 
     /// Tool item IDs (per session) whose final terminal content has NOT yet
     /// been sent to the server. Populated when we sync a new tool in a
@@ -98,7 +111,6 @@ final class MessageRelay {
             if !knownSessionIds.contains(sessionId) {
                 Self.logger.info("New session detected: \(sessionId.prefix(8))")
                 knownSessionIds.insert(sessionId)
-                syncedItemCounts[sessionId] = 0
                 Task { await createServerSession(session) }
                 startAliveTimer(for: sessionId)
             }
@@ -116,7 +128,6 @@ final class MessageRelay {
                 }
                 stopAliveTimer(for: sessionId)
                 knownSessionIds.remove(sessionId)
-                syncedItemCounts.removeValue(forKey: sessionId)
                 syncedItemContents.removeValue(forKey: sessionId)
                 pendingToolItems.removeValue(forKey: sessionId)
                 serverSessionIds.removeValue(forKey: sessionId)
@@ -129,7 +140,6 @@ final class MessageRelay {
             connection.sendSessionEnd(sessionId: id)
             stopAliveTimer(for: id)
             knownSessionIds.remove(id)
-            syncedItemCounts.removeValue(forKey: id)
             syncedItemContents.removeValue(forKey: id)
             pendingToolItems.removeValue(forKey: id)
         }
@@ -252,7 +262,6 @@ final class MessageRelay {
 
     private func syncNewMessages(_ session: SessionState) {
         let localId = session.sessionId
-        let syncedCount = syncedItemCounts[localId] ?? 0
         let items = session.chatItems
 
         // Need the server session ID (created via createServerSession)
@@ -261,47 +270,51 @@ final class MessageRelay {
             return
         }
 
+        var contentMap = syncedItemContents[localId] ?? [:]
+
         let isConn = self.connection.isConnected
-        Self.logger.info("syncNewMessages: \(localId.prefix(8))... items=\(items.count) synced=\(syncedCount) connected=\(isConn) serverId=\(serverId.prefix(8))...")
+        Self.logger.info("syncNewMessages: \(localId.prefix(8))... items=\(items.count) alreadySynced=\(contentMap.count) connected=\(isConn) serverId=\(serverId.prefix(8))...")
 
         guard connection.isConnected else {
-            Self.logger.warning("Skipping sync: not connected")
+            // OPT-09: this used to be os.log-only — invisible to users. A
+            // disconnected socket means the phone silently stops seeing
+            // replies, so leave a trace in ~/.claude/.codeisland.log.
+            DebugLogger.log("Relay", "sync skipped (server not connected) sid=\(localId.prefix(8)) unsynced=\(items.count - contentMap.count)")
             return
         }
 
-        var contentMap = syncedItemContents[localId] ?? [:]
         var pending = pendingToolItems[localId] ?? []
         var sentCount = 0
 
-        // Sync new items (count-based)
-        if items.count > syncedCount {
-            let newItems = Array(items.dropFirst(syncedCount))
-            syncedItemCounts[localId] = items.count
+        // Sync new items — identity-based: anything whose id we haven't
+        // sent yet is new, regardless of where it sits in the array.
+        // (The old count cursor broke permanently whenever chatItems
+        // shrank — /clear, compact, history rebuild. See header comment.)
+        for item in items where contentMap[item.id] == nil {
+            // Dedup: skip user messages that the phone just injected via cmux — they'd
+            // otherwise round-trip back to the phone as a second copy. Mark them
+            // as handled so the next tick doesn't re-consume the injection record.
+            if case .user(let text) = item.type,
+               SyncManager.shared.consumePhoneInjection(claudeUuid: localId, text: text) {
+                Self.logger.info("Skipping echo of phone-injected user message")
+                contentMap[item.id] = Self.echoSuppressedMarker
+                continue
+            }
+            let content = serializeChatItem(item)
+            contentMap[item.id] = content
+            connection.sendMessage(sessionId: serverId, content: content, localId: item.id)
+            sentCount += 1
 
-            for item in newItems {
-                // Dedup: skip user messages that the phone just injected via cmux — they'd
-                // otherwise round-trip back to the phone as a second copy.
-                if case .user(let text) = item.type,
-                   SyncManager.shared.consumePhoneInjection(claudeUuid: localId, text: text) {
-                    Self.logger.info("Skipping echo of phone-injected user message")
-                    continue
-                }
-                let content = serializeChatItem(item)
-                contentMap[item.id] = content
-                connection.sendMessage(sessionId: serverId, content: content, localId: item.id)
-                sentCount += 1
-
-                // Track items that may still mutate so future ticks re-sync them.
-                // Tools: running/waiting → terminal status change
-                // Assistant: streaming partial text → final complete text
-                switch item.type {
-                case .toolCall(let tool) where !Self.isToolTerminal(tool.status):
-                    pending.insert(item.id)
-                case .assistant:
-                    pending.insert(item.id)
-                default:
-                    break
-                }
+            // Track items that may still mutate so future ticks re-sync them.
+            // Tools: running/waiting → terminal status change
+            // Assistant: streaming partial text → final complete text
+            switch item.type {
+            case .toolCall(let tool) where !Self.isToolTerminal(tool.status):
+                pending.insert(item.id)
+            case .assistant:
+                pending.insert(item.id)
+            default:
+                break
             }
         }
 
