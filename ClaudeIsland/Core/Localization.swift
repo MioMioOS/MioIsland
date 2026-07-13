@@ -375,6 +375,24 @@ enum L10n {
         tr("Not activated", "未激活")
     }
 
+    // Codex usage bar (after Codex dropped the 5h window — now weekly-only,
+    // plus credits/unlimited plan variants).
+
+    /// Compact label for Codex's 10080-minute weekly quota window.
+    static var codexWeeklyShort: String {
+        tr("Wk", "周")
+    }
+
+    /// Shown in place of a percentage gauge for unlimited Codex plans.
+    static var codexUnlimited: String {
+        tr("Unlimited", "不限量")
+    }
+
+    /// Prefix for a Codex credit balance, e.g. "Credits 1,200".
+    static var codexCreditsLabel: String {
+        tr("Credits", "额度")
+    }
+
     static var subscriptionRefreshTooltip: String {
         tr("Refresh status", "刷新状态")
     }

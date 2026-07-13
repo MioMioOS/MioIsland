@@ -1808,6 +1808,72 @@ struct CodexUsageStatsBar: View {
         return maxPercent >= 60 ? .alert : .compact
     }
 
+    /// The per-window gauges (weekly quota etc.), rendered per display mode.
+    /// Extracted so the body can branch cleanly between window / unlimited /
+    /// credit plans (Codex dropped the 5h window — now weekly-only, or
+    /// credit/unlimited-based depending on plan).
+    @ViewBuilder
+    private func windowGauges(_ snapshot: CodexUsageSnapshot) -> some View {
+        switch effectiveMode {
+        // .tokens handled by the unified bar; fall back to compact.
+        case .auto, .compact, .tokens:
+            HStack(spacing: 6) {
+                ForEach(snapshot.windows) { window in
+                    usageGaugeCompact(pct: window.roundedUsedPercentage, label: window.label, resetAt: window.resetsAt)
+                }
+            }
+        case .alert:
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(snapshot.windows) { window in
+                    usageGaugeAlert(pct: window.roundedUsedPercentage, label: window.label, resetAt: window.resetsAt)
+                }
+            }
+        case .time:
+            HStack(spacing: 10) {
+                ForEach(Array(snapshot.windows.enumerated()), id: \.element.id) { idx, window in
+                    if idx > 0 {
+                        Rectangle().fill(theme.usageBorder.opacity(0.4)).frame(width: 1, height: 22)
+                    }
+                    usageGaugeTime(pct: window.roundedUsedPercentage, label: window.label, resetAt: window.resetsAt)
+                }
+            }
+        }
+    }
+
+    /// Unlimited plan — no cap, so a percentage gauge is meaningless.
+    private var codexUnlimitedChip: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "infinity")
+                .notchFont(11, weight: .bold)
+                .foregroundColor(theme.doneColor)
+            Text(L10n.codexUnlimited)
+                .notchFont(9, weight: .semibold)
+                .foregroundColor(theme.usageText)
+        }
+        .help("Codex: \(codexPlanName)\(L10n.codexUnlimited)")
+    }
+
+    /// Credit-based plan — show remaining balance instead of a window %.
+    private func codexCreditsChip(balance: Double) -> some View {
+        let shown = balance >= 1000 ? String(format: "%.1fK", balance / 1000) : String(format: "%.0f", balance)
+        return HStack(spacing: 4) {
+            Text(L10n.codexCreditsLabel)
+                .notchFont(7, weight: .bold)
+                .notchSecondaryForeground()
+            Text(shown)
+                .notchFont(10, weight: .semibold, design: .monospaced)
+                .foregroundColor(theme.usageText)
+        }
+        .help("Codex: \(codexPlanName)\(L10n.codexCreditsLabel) \(shown)")
+    }
+
+    /// Plan-name prefix for tooltips, e.g. "GPT-5.3-Codex-Spark · ".
+    /// Empty when the server didn't send limit_name.
+    private var codexPlanName: String {
+        guard let name = monitor.snapshot?.limitName, !name.isEmpty else { return "" }
+        return "\(name) · "
+    }
+
     private var shouldPulseFrame: Bool {
         effectiveMode == .alert && maxPercent >= 80
     }
@@ -1833,43 +1899,14 @@ struct CodexUsageStatsBar: View {
                         .frame(width: 1, height: effectiveMode == .alert ? 18 : 14)
 
                     Group {
-                        switch effectiveMode {
-                        // .tokens handled by the unified bar; fall back to compact.
-                        case .auto, .compact, .tokens:
-                            HStack(spacing: 6) {
-                                ForEach(snapshot.windows) { window in
-                                    usageGaugeCompact(
-                                        pct: window.roundedUsedPercentage,
-                                        label: window.label,
-                                        resetAt: window.resetsAt
-                                    )
-                                }
-                            }
-                        case .alert:
-                            VStack(alignment: .leading, spacing: 3) {
-                                ForEach(snapshot.windows) { window in
-                                    usageGaugeAlert(
-                                        pct: window.roundedUsedPercentage,
-                                        label: window.label,
-                                        resetAt: window.resetsAt
-                                    )
-                                }
-                            }
-                        case .time:
-                            HStack(spacing: 10) {
-                                ForEach(Array(snapshot.windows.enumerated()), id: \.element.id) { idx, window in
-                                    if idx > 0 {
-                                        Rectangle()
-                                            .fill(theme.usageBorder.opacity(0.4))
-                                            .frame(width: 1, height: 22)
-                                    }
-                                    usageGaugeTime(
-                                        pct: window.roundedUsedPercentage,
-                                        label: window.label,
-                                        resetAt: window.resetsAt
-                                    )
-                                }
-                            }
+                        // Post-5h-removal a Codex plan can be: window-based
+                        // (weekly gauge), unlimited (∞), or credit-based.
+                        if snapshot.isUnlimited {
+                            codexUnlimitedChip
+                        } else if !snapshot.windows.isEmpty {
+                            windowGauges(snapshot)
+                        } else if let balance = snapshot.creditBalance {
+                            codexCreditsChip(balance: balance)
                         }
                     }
                 }
@@ -2072,10 +2109,11 @@ struct CodexUsageStatsBar: View {
     }
 
     private func usageTooltip(pct: Int, label: String, resetAt: Date?) -> String {
-        guard let resetAt else { return "Codex \(label): \(pct)%" }
+        let prefix = "Codex: \(codexPlanName)"
+        guard let resetAt else { return "\(prefix)\(label) \(pct)%" }
         let remaining = resetAt.timeIntervalSinceNow
-        if remaining <= 0 { return "Codex \(label): \(pct)% (reset)" }
-        return "Codex \(label): \(pct)% (resets in \(formatResetShort(remaining)))"
+        if remaining <= 0 { return "\(prefix)\(label) \(pct)% (reset)" }
+        return "\(prefix)\(label) \(pct)% (resets in \(formatResetShort(remaining)))"
     }
 }
 
