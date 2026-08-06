@@ -289,7 +289,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
     private static func directParseFirstMessage(sessionId: String, cwd: String) -> String? {
         // Try exact cwd first, then walk up parent directories
         var searchCwd = cwd
-        let projectsDir = NSHomeDirectory() + "/.claude/projects"
+        let projectsDir = ConfigPaths.claudeProjectsDir.path
 
         while !searchCwd.isEmpty && searchCwd != "/" {
             let projectDir = searchCwd.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ".", with: "-")

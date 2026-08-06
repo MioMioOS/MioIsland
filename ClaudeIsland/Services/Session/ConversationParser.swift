@@ -529,23 +529,21 @@ actor ConversationParser {
 
     /// Build session file path, walking up parent directories if needed
     private static func sessionFilePath(sessionId: String, cwd: String) -> String {
-        let home = NSHomeDirectory()
+        let projectsDir = ConfigPaths.claudeProjectsDir.path
         let fm = FileManager.default
         var dir = cwd
 
-        // Try cwd and each parent directory until we find the JSONL
         while dir.count > 1 {
             let projectDir = dir.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ".", with: "-")
-            let path = home + "/.claude/projects/" + projectDir + "/" + sessionId + ".jsonl"
+            let path = projectsDir + "/" + projectDir + "/" + sessionId + ".jsonl"
             if fm.fileExists(atPath: path) {
                 return path
             }
             dir = (dir as NSString).deletingLastPathComponent
         }
 
-        // Fallback to original cwd-based path
         let projectDir = cwd.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ".", with: "-")
-        return home + "/.claude/projects/" + projectDir + "/" + sessionId + ".jsonl"
+        return projectsDir + "/" + projectDir + "/" + sessionId + ".jsonl"
     }
 
     private func parseMessageLine(_ json: [String: Any], seenToolIds: inout Set<String>, toolIdToName: inout [String: String]) -> ChatMessage? {
@@ -975,7 +973,7 @@ actor ConversationParser {
         guard !agentId.isEmpty else { return [] }
 
         let projectDir = cwd.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ".", with: "-")
-        let agentFile = NSHomeDirectory() + "/.claude/projects/" + projectDir + "/agent-" + agentId + ".jsonl"
+        let agentFile = ConfigPaths.claudeProjectsDir.path + "/" + projectDir + "/agent-" + agentId + ".jsonl"
 
         guard FileManager.default.fileExists(atPath: agentFile),
               let content = try? String(contentsOfFile: agentFile, encoding: .utf8) else {
@@ -1067,7 +1065,7 @@ extension ConversationParser {
         guard !agentId.isEmpty else { return [] }
 
         let projectDir = cwd.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ".", with: "-")
-        let agentFile = NSHomeDirectory() + "/.claude/projects/" + projectDir + "/agent-" + agentId + ".jsonl"
+        let agentFile = ConfigPaths.claudeProjectsDir.path + "/" + projectDir + "/agent-" + agentId + ".jsonl"
 
         guard FileManager.default.fileExists(atPath: agentFile),
               let content = try? String(contentsOfFile: agentFile, encoding: .utf8) else {

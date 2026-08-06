@@ -22,11 +22,9 @@ struct HookInstaller {
     static func installIfNeeded() {
         cleanupLegacyHooks()
 
-        let claudeDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude")
-        let hooksDir = claudeDir.appendingPathComponent("hooks")
-        let pythonScript = hooksDir.appendingPathComponent("codeisland-state.py")
-        let settings = claudeDir.appendingPathComponent("settings.json")
+        let hooksDir = ConfigPaths.claudeHooksDir
+        let pythonScript = ConfigPaths.hookScript
+        let settings = ConfigPaths.claudeSettings
 
         try? FileManager.default.createDirectory(
             at: hooksDir,
@@ -53,7 +51,7 @@ struct HookInstaller {
         }
 
         let python = detectPython()
-        let command = "\(python) ~/.claude/hooks/codeisland-state.py"
+        let command = "\(python) \(ConfigPaths.hookScript.path)"
         let hookEntry: [[String: Any]] = [["type": "command", "command": command]]
         let hookEntryWithTimeout: [[String: Any]] = [["type": "command", "command": command, "timeout": 86400]]
         let withMatcher: [[String: Any]] = [["matcher": "*", "hooks": hookEntry]]
@@ -111,9 +109,7 @@ struct HookInstaller {
 
     /// Check if hooks are currently installed
     static func isInstalled() -> Bool {
-        let claudeDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude")
-        let settings = claudeDir.appendingPathComponent("settings.json")
+        let settings = ConfigPaths.claudeSettings
 
         guard let data = try? Data(contentsOf: settings),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -140,11 +136,9 @@ struct HookInstaller {
 
     /// Uninstall hooks from settings.json and remove script
     static func uninstall() {
-        let claudeDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude")
-        let hooksDir = claudeDir.appendingPathComponent("hooks")
-        let pythonScript = hooksDir.appendingPathComponent("codeisland-state.py")
-        let settings = claudeDir.appendingPathComponent("settings.json")
+        let hooksDir = ConfigPaths.claudeHooksDir
+        let pythonScript = ConfigPaths.hookScript
+        let settings = ConfigPaths.claudeSettings
 
         try? FileManager.default.removeItem(at: pythonScript)
 
@@ -195,10 +189,8 @@ struct HookInstaller {
     /// Strip hook entries from older app versions and delete their leftover
     /// scripts. Idempotent — safe to run every launch.
     static func cleanupLegacyHooks() {
-        let claudeDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude")
-        let hooksDir = claudeDir.appendingPathComponent("hooks")
-        let settings = claudeDir.appendingPathComponent("settings.json")
+        let hooksDir = ConfigPaths.claudeHooksDir
+        let settings = ConfigPaths.claudeSettings
 
         // 1. Delete legacy script files on disk (no-op if missing).
         for name in legacyHookScripts {

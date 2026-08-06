@@ -83,8 +83,7 @@ enum HookHealthCheck {
 
     /// Check Claude Code hook health.
     static func checkClaude(
-        claudeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude"),
+        claudeDirectory: URL = ConfigPaths.claudeDir,
         fileManager: FileManager = .default
     ) -> HookHealthReport {
         var issues: [HookHealthReport.Issue] = []
@@ -133,8 +132,7 @@ enum HookHealthCheck {
 
     /// Check Codex hook health.
     static func checkCodex(
-        codexDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".codex"),
+        codexDirectory: URL = ConfigPaths.codexDir,
         fileManager: FileManager = .default
     ) -> HookHealthReport {
         var issues: [HookHealthReport.Issue] = []

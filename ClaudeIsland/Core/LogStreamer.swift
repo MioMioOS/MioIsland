@@ -24,7 +24,7 @@ final class LogStreamer: ObservableObject {
 
     @Published private(set) var lines: [String] = []
 
-    private let logPath = NSHomeDirectory() + "/.claude/.codeisland.log"
+    private let logPath = ConfigPaths.claudeLogFile.path
     private var fileHandle: FileHandle?
     private var source: DispatchSourceFileSystemObject?
     private var readOffset: UInt64 = 0

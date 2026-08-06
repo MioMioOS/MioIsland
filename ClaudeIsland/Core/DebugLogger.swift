@@ -3,14 +3,12 @@
 //  CodeIsland
 //
 //  Lightweight debug logging to file for runtime diagnostics.
-//  Logs are written to ~/.claude/.codeisland.log
-//  Tail the log: tail -f ~/.claude/.codeisland.log
 //
 
 import Foundation
 
 enum DebugLogger: Sendable {
-    private static let logPath = NSHomeDirectory() + "/.claude/.codeisland.log"
+    private static let logPath = ConfigPaths.claudeLogFile.path
     private nonisolated(unsafe) static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss.SSS"

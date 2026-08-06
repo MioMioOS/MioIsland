@@ -264,15 +264,13 @@ struct HookDiagnosticsView: View {
     private func runLegacyCleanup() {
         // Detect whether anything existed before the call, so we can report
         // "cleaned" vs "nothing to clean" without a dedicated return value.
-        let hooksDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/hooks")
+        let hooksDir = ConfigPaths.claudeHooksDir
         let hadLegacyFile = HookInstaller.legacyHookScripts.contains { name in
             FileManager.default.fileExists(
                 atPath: hooksDir.appendingPathComponent(name).path
             )
         }
-        let settings = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/settings.json")
+        let settings = ConfigPaths.claudeSettings
         let hadLegacyRef: Bool = {
             guard let data = try? Data(contentsOf: settings),
                   let str = String(data: data, encoding: .utf8) else { return false }

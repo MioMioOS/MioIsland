@@ -970,8 +970,7 @@ final class TerminalWriter {
     /// Each file contains `{ "pid", "sessionId", "cwd", "startedAt", "kind", "entrypoint" }`.
     /// Verifies the pid is still running via `ps -p {pid} -o pid=` before including it.
     nonisolated private func discoverClaudeSessionsFromConfig() async -> [ClaudeProcessInfo] {
-        let sessionsDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/sessions")
+        let sessionsDir = ConfigPaths.claudeSessionsDir
         guard let contents = try? FileManager.default.contentsOfDirectory(
             at: sessionsDir,
             includingPropertiesForKeys: [.contentModificationDateKey]

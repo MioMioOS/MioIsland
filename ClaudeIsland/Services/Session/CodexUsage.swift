@@ -87,8 +87,7 @@ class CodexUsageMonitor: ObservableObject {
 // MARK: - Usage Loader
 
 enum CodexUsageLoader {
-    static let defaultRootURL: URL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".codex/sessions", isDirectory: true)
+    static let defaultRootURL: URL = ConfigPaths.codexDir.appendingPathComponent("sessions", isDirectory: true)
 
     private struct Candidate {
         var fileURL: URL

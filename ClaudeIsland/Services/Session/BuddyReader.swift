@@ -102,7 +102,7 @@ class BuddyReader: ObservableObject {
     }
 
     func reload() {
-        let configPath = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json")
+        let configPath = ConfigPaths.claudeBuddyFile
         guard let data = try? Data(contentsOf: configPath),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let companion = json["companion"] as? [String: Any],
@@ -171,7 +171,7 @@ class BuddyReader: ObservableObject {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
 
         // 1. Check cached salt file (written by any-buddy or CodeIsland setup)
-        let cachePath = "\(home)/.claude/.codeisland-salt"
+        let cachePath = ConfigPaths.claudeSaltCache.path
         if let cached = try? String(contentsOfFile: cachePath, encoding: .utf8),
            cached.count == originalSalt.count,
            cached.allSatisfy({ $0.isASCII && !$0.isNewline }) {
@@ -225,7 +225,7 @@ class BuddyReader: ObservableObject {
 
     // MARK: - Cached Bones
 
-    private static let bonesCachePath = FileManager.default.homeDirectoryForCurrentUser.path + "/.claude/.codeisland-bones.json"
+    private static let bonesCachePath = ConfigPaths.claudeBonesCache.path
 
     private static func readCachedBones() -> Bones? {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: bonesCachePath)),

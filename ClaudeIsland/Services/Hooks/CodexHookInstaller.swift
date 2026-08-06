@@ -61,16 +61,14 @@ enum CodexHookInstaller {
 
     /// Install Codex hooks on app launch.
     static func installIfNeeded() {
-        let codexDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".codex")
+        let codexDir = ConfigPaths.codexDir
         try? FileManager.default.createDirectory(at: codexDir, withIntermediateDirectories: true)
 
-        let scriptPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/hooks/codeisland-state.py").path
+        let scriptPath = ConfigPaths.hookScript.path
         let command = hookCommand(for: scriptPath)
 
-        let configURL = codexDir.appendingPathComponent("config.toml")
-        let hooksURL = codexDir.appendingPathComponent("hooks.json")
+        let configURL = ConfigPaths.codexConfig
+        let hooksURL = ConfigPaths.codexHooks
         let manifestURL = codexDir.appendingPathComponent(CodexHookInstallerManifest.fileName)
         let legacyManifestURL = codexDir.appendingPathComponent(CodexHookInstallerManifest.legacyFileName)
 
@@ -103,8 +101,7 @@ enum CodexHookInstaller {
 
     /// Check if Codex hooks are currently installed.
     static func isInstalled() -> Bool {
-        let hooksURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".codex/hooks.json")
+        let hooksURL = ConfigPaths.codexHooks
         guard let data = try? Data(contentsOf: hooksURL),
               let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let hooksObj = json["hooks"] as? [String: Any] else { return false }
@@ -126,10 +123,9 @@ enum CodexHookInstaller {
 
     /// Uninstall Codex hooks and optionally revert the feature flag.
     static func uninstall() {
-        let codexDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".codex")
-        let configURL = codexDir.appendingPathComponent("config.toml")
-        let hooksURL = codexDir.appendingPathComponent("hooks.json")
+        let codexDir = ConfigPaths.codexDir
+        let configURL = ConfigPaths.codexConfig
+        let hooksURL = ConfigPaths.codexHooks
         let primaryManifestURL = codexDir.appendingPathComponent(CodexHookInstallerManifest.fileName)
         let legacyManifestURL = codexDir.appendingPathComponent(CodexHookInstallerManifest.legacyFileName)
         let manifestURL = resolvedManifestURL(in: codexDir)

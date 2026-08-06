@@ -44,7 +44,7 @@ enum CapabilityScanner {
     /// commands/skills under that directory's `.claude/` are included.
     static func scan(projectPath: String? = nil) -> CapabilitySnapshot {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let claudeDir = home.appendingPathComponent(".claude")
+        let claudeDir = ConfigPaths.claudeDir
 
         let builtins = builtinSlashCommands()
 
@@ -157,7 +157,7 @@ enum CapabilityScanner {
     // MARK: - MCP Servers
 
     private static func scanMCPServers(home: URL, projectPath: String?) -> [CapabilityItem] {
-        let configFile = home.appendingPathComponent(".claude.json")
+        let configFile = ConfigPaths.claudeBuddyFile
         guard let data = try? Data(contentsOf: configFile),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return [] }
