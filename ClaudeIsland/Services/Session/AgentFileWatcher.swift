@@ -42,7 +42,12 @@ class AgentFileWatcher {
 
         let projectDir = cwd.replacingOccurrences(of: "/", with: "-")
                             .replacingOccurrences(of: ".", with: "-")
-        self.filePath = NSHomeDirectory() + "/.claude/projects/" + projectDir + "/agent-" + agentId + ".jsonl"
+        let encodedPath = NSHomeDirectory() + "/.claude/projects/" + projectDir + "/agent-" + agentId + ".jsonl"
+        // Non-ASCII cwd breaks the encoded path (issue #99); fall back to a
+        // UUID-name scan across all project dirs.
+        self.filePath = FileManager.default.fileExists(atPath: encodedPath)
+            ? encodedPath
+            : (ConversationParser.scanProjectsForFile(named: "agent-" + agentId + ".jsonl") ?? encodedPath)
     }
 
     /// Start watching the agent file

@@ -258,6 +258,10 @@ enum L10n {
     static var testSendSuccess: String { tr("✓ Delivered", "✓ 已送达") }
     static var testSendNoTarget: String { tr("No cmux-hosted Claude session detected", "没有检测到 cmux 里的 Claude 会话") }
     static var testSendFailed: String { tr("Failed — check logs tab", "失败 — 请查看日志 tab") }
+    static var testSendFailedSocketACL: String { tr(
+        "Failed — cmux's socket control mode is \"cmuxOnly\", which rejects apps outside cmux's own process tree (Mio Island is one). Set \"automation\": { \"socketControlMode\": \"automation\" } in ~/.config/cmux/cmux.json and FULLY restart cmux (reload-config does not re-apply this).",
+        "失败 — cmux 的套接字控制模式为 “cmuxOnly”，会拒绝 cmux 进程树之外的 App（Mio Island 就是其一）。请在 ~/.config/cmux/cmux.json 里设置 \"automation\": { \"socketControlMode\": \"automation\" }，并完全重启 cmux（reload-config 不会重新加载该项）。"
+    ) }
     static var openAccessibilitySettings: String { tr("Open Accessibility settings", "打开辅助功能设置") }
     static var openAutomationSettings: String { tr("Open Automation settings", "打开自动化设置") }
     static var repairPermission: String { tr("Repair", "修复权限") }

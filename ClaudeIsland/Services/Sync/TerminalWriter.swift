@@ -100,23 +100,27 @@ final class TerminalWriter {
         return detectedFallback
     }
 
-    /// Codex's TUI runs in raw mode with bracketed paste: a `\r` in the text
-    /// stream is a literal newline in its composer, never a submit. It only
-    /// submits on a real Enter *key* event. That's true whether or not we
-    /// resolved an explicit cmux surface — `cmux send-key` targets the
-    /// workspace's active surface when `--surface` is omitted — so Codex must
-    /// ALWAYS take the send-then-key path. Gating this on `hasSurfaceTarget`
-    /// was the bug: with no surface it fell back to the inline-`\r` path, which
-    /// strands the text in Codex's composer unsent. `hasSurfaceTarget` is kept
-    /// for callers/diagnostics but no longer changes Codex's submit path.
+    /// Every agent TUI driven through cmux (Claude / Codex / Gemini / opencode …)
+    /// runs in raw mode with bracketed paste. In that mode an inline `\r` in the
+    /// pasted text is NOT a reliable submit:
+    ///
+    ///  - short payloads: cmux forwards the `\r` as a carriage return, so
+    ///    replacing every `\n` with `\r` splits one multi-line message into N
+    ///    separately-submitted messages (issue #96);
+    ///  - payloads past cmux's ~128-byte inline buffer switch to the
+    ///    `ghostty_surface_text` channel, where the trailing `\r` is just a
+    ///    literal character — the text lands in the composer but never submits,
+    ///    while the phone still shows "delivered" (issue #96, silent failure).
+    ///
+    /// A real Enter *key* event (`cmux send-key enter`) submits correctly in
+    /// every case and for every length, so send-then-key is the default for the
+    /// entire cmux path — not just Codex. The text is sent verbatim (no
+    /// `\n`→`\r` rewrite) so multi-line messages stay a single message.
+    ///
+    /// `terminalApp` / `hasSurfaceTarget` are retained for API/diagnostic
+    /// compatibility but no longer branch the submit strategy.
     nonisolated static func cmuxSubmissionPlan(text: String, terminalApp: String?, hasSurfaceTarget: Bool) -> CmuxSubmissionPlan {
-        let normalizedApp = terminalApp?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if normalizedApp == "codex" {
-            return .sendThenKey(text: text, key: "enter")
-        }
-
-        let escaped = text.replacingOccurrences(of: "\n", with: "\r")
-        return .appendReturn("\(escaped)\r")
+        return .sendThenKey(text: text, key: "enter")
     }
 
     // MARK: - Diagnostics (for Settings → cmux Connection tab)
@@ -318,9 +322,47 @@ final class TerminalWriter {
             return (true, "\(L10n.testSendSuccess) — ws=\(wsId.prefix(8)) surf=\(surfId?.prefix(8).description ?? "-")")
         } else {
             // cmuxRun already logged the timeout/non-zero exit detail ([Shell]).
-            DebugLogger.log("TestSend", "FAILED: cmux send returned error ws=\(wsId.prefix(8)) surf=\(surfId?.prefix(8).description ?? "-")")
+            // The #1 cause of a hard send failure (issue #95) is cmux's socket
+            // ACL: `socketControlMode` defaults to `cmuxOnly`, which rejects any
+            // process outside cmux's own tree — Mio Island included — with a
+            // `Broken pipe`. That looks identical to a generic error, so users
+            // (and their AIs) chase Automation/TCC red herrings for an hour.
+            // Detect the ACL deterministically from cmux's own config and say so.
+            let mode = Self.cmuxSocketControlMode()
+            if mode != "automation" {
+                DebugLogger.log("TestSend", "FAILED: likely socket ACL (socketControlMode=\(mode ?? "default:cmuxOnly")) ws=\(wsId.prefix(8)) surf=\(surfId?.prefix(8).description ?? "-")")
+                return (false, L10n.testSendFailedSocketACL)
+            }
+            DebugLogger.log("TestSend", "FAILED: cmux send returned error (socketControlMode=automation) ws=\(wsId.prefix(8)) surf=\(surfId?.prefix(8).description ?? "-")")
             return (false, L10n.testSendFailed)
         }
+    }
+
+    /// Read cmux's `automation.socketControlMode` from its on-disk config.
+    /// Returns the configured mode string, or nil when the key/file is absent
+    /// (cmux's own default is `cmuxOnly`, so nil should be treated as such).
+    ///
+    /// External apps can only drive `cmux send` when this is `automation`; the
+    /// default `cmuxOnly` restricts the control socket to cmux's own process
+    /// descendants and is the root cause of the #95 "injection always fails"
+    /// report. Checked paths mirror cmux's config lookup.
+    nonisolated static func cmuxSocketControlMode() -> String? {
+        let home = NSHomeDirectory()
+        let candidates = [
+            home + "/.config/cmux/cmux.json",
+            home + "/Library/Application Support/cmux/cmux.json"
+        ]
+        for path in candidates {
+            guard let data = FileManager.default.contents(atPath: path),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+            if let automation = json["automation"] as? [String: Any],
+               let mode = automation["socketControlMode"] as? String {
+                return mode
+            }
+            // File exists but doesn't pin the key → cmux applies its default.
+            return nil
+        }
+        return nil
     }
 
     // MARK: - Relay entry points

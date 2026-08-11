@@ -48,14 +48,32 @@ final class TerminalWriterRoutingTests: XCTestCase {
         XCTAssertEqual(plan, .sendThenKey(text: "OK", key: "enter"))
     }
 
-    func test_standardCmuxSubmissionAppendsReturnInline() {
+    /// Issue #96: the cmux path now uses a real Enter key event for ALL agents,
+    /// not just Codex. A cmux-hosted Claude session reports `terminalApp=cmux`
+    /// (never "claude"), so gating send-then-key on the agent name never fired.
+    /// send-then-key is the default; the old `.appendReturn("OK\r")` assertion
+    /// pinned the bug in place.
+    func test_standardCmuxSubmissionUsesSeparateEnterKey() {
         let plan = TerminalWriter.cmuxSubmissionPlan(
             text: "OK",
-            terminalApp: "Ghostty",
+            terminalApp: "cmux",
             hasSurfaceTarget: true
         )
 
-        XCTAssertEqual(plan, .appendReturn("OK\r"))
+        XCTAssertEqual(plan, .sendThenKey(text: "OK", key: "enter"))
+    }
+
+    /// Issue #96: a multi-line message must stay ONE message. The text is sent
+    /// verbatim (no `\n`→`\r` rewrite), and a single Enter key submits it — so
+    /// the newline survives in the composer instead of splitting into N sends.
+    func test_multilineCmuxSubmissionIsSentVerbatimAsSingleMessage() {
+        let plan = TerminalWriter.cmuxSubmissionPlan(
+            text: "line1\nline2",
+            terminalApp: "cmux",
+            hasSurfaceTarget: true
+        )
+
+        XCTAssertEqual(plan, .sendThenKey(text: "line1\nline2", key: "enter"))
     }
 
     /// Regression: Codex's raw-mode TUI only submits on a real Enter KEY event;

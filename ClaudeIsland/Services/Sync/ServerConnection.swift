@@ -40,6 +40,25 @@ final class ServerConnection: ObservableObject {
     private var socket: SocketIOClient?
     private var crypto: MessageCrypto?
 
+    // MARK: - Zombie-socket detection (issue #95)
+    //
+    // Socket.IO's own reconnection (`.reconnects(true)`) only fires when it
+    // observes a DISCONNECT. A half-open TCP connection — server-side dead but
+    // no FIN/RST delivered — leaves `isConnected == true` forever while every
+    // upstream `emitWithAck` silently times out. The field report showed ~4800
+    // consecutive ack timeouts with zero recovery until the app was quit.
+    //
+    // We treat a run of consecutive ack timeouts as evidence the socket is a
+    // zombie and force a full reconnect. Any successful ack resets the counter,
+    // so a merely-slow server never trips it; a cooldown prevents reconnect
+    // storms if the forced reconnect itself doesn't immediately recover.
+    private var consecutiveAckTimeouts = 0
+    private var lastForcedReconnectAt: Date?
+    /// Consecutive upstream ack timeouts before we declare the socket a zombie.
+    private static let zombieAckTimeoutThreshold = 3
+    /// Minimum gap between forced reconnects, so we don't thrash.
+    private static let forcedReconnectCooldown: TimeInterval = 60
+
     /// Called when an RPC request arrives from the phone
     var onRpcCall: ((String, String, @escaping (String) -> Void) -> Void)?
 
@@ -186,6 +205,8 @@ final class ServerConnection: ObservableObject {
         socket?.on(clientEvent: .connect) { [weak self] _, _ in
             Task { @MainActor in
                 self?.state = .connected
+                // Fresh, healthy socket — clear any zombie-detection run.
+                self?.consecutiveAckTimeouts = 0
                 Self.logger.info("Socket connected to \(self?.serverUrl ?? "")")
             }
         }
@@ -291,6 +312,7 @@ final class ServerConnection: ObservableObject {
         manager = nil
         socket = nil
         state = .disconnected
+        consecutiveAckTimeouts = 0
     }
 
     // MARK: - Sending
@@ -307,14 +329,59 @@ final class ServerConnection: ObservableObject {
         var payload: [String: Any] = ["sid": sessionId, "message": content]
         if let localId { payload["localId"] = localId }
 
-        socket?.emitWithAck("message", payload).timingOut(after: 30) { data in
+        socket?.emitWithAck("message", payload).timingOut(after: 30) { [weak self] data in
             // Socket.IO delivers ["NO ACK"] when the server didn't ack in
             // time (SocketAckStatus.noAck). That's an upstream message the
             // phone will never see — record it instead of ignoring.
-            if let status = data.first as? String, status == "NO ACK" {
+            let timedOut = (data.first as? String) == "NO ACK"
+            if timedOut {
                 DebugLogger.log("Relay", "upstream message ack timeout sid=\(sessionId.prefix(8)) localId=\(localId?.prefix(12).description ?? "-")")
             }
+            // The ack closure runs off the main actor (Socket.IO's handle
+            // queue); hop back before touching connection state.
+            Task { @MainActor in self?.recordAckResult(timedOut: timedOut) }
         }
+    }
+
+    /// Feed each upstream ack outcome into the zombie-socket detector.
+    /// A success resets the run; a threshold-length run of timeouts forces a
+    /// reconnect. (issue #95)
+    private func recordAckResult(timedOut: Bool) {
+        guard timedOut else {
+            if consecutiveAckTimeouts > 0 {
+                DebugLogger.log("Relay", "upstream ack recovered after \(consecutiveAckTimeouts) timeout(s)")
+            }
+            consecutiveAckTimeouts = 0
+            return
+        }
+        consecutiveAckTimeouts += 1
+        if consecutiveAckTimeouts >= Self.zombieAckTimeoutThreshold {
+            forceReconnectIfStale()
+        }
+    }
+
+    /// Tear down and rebuild the socket when it looks like a zombie: connected
+    /// per Socket.IO, but acks aren't coming back. Guarded by a cooldown so
+    /// repeated timeouts don't trigger a reconnect storm. (issue #95)
+    private func forceReconnectIfStale() {
+        // Only meaningful when the library still thinks we're connected — that's
+        // exactly the half-open case its own reconnection won't catch. If we're
+        // already disconnected/connecting, the normal reconnect path owns it.
+        guard state == .connected else { return }
+        if let last = lastForcedReconnectAt,
+           Date().timeIntervalSince(last) < Self.forcedReconnectCooldown {
+            return
+        }
+        lastForcedReconnectAt = Date()
+        consecutiveAckTimeouts = 0
+        DebugLogger.log("Relay", "zombie socket detected (\(Self.zombieAckTimeoutThreshold)+ consecutive ack timeouts) — forcing reconnect")
+        Self.logger.warning("Zombie socket — forcing reconnect to \(self.serverUrl, privacy: .public)")
+        // Full rebuild: disconnect() clears manager/socket, connect() re-auths
+        // the socket handshake and re-registers every handler. The state
+        // transition (.connected → .disconnected → .connecting → .connected)
+        // is itself the visible signal for any UI bound to `state`.
+        disconnect()
+        connect()
     }
 
     /// Send session-alive heartbeat

@@ -300,6 +300,11 @@ struct SessionState: Equatable, Identifiable, Sendable {
             // Go up one directory
             searchCwd = (searchCwd as NSString).deletingLastPathComponent
         }
+        // Last resort: encoded-path lookups missed (expected on a non-ASCII cwd,
+        // issue #99). Find the JSONL by its globally-unique UUID name.
+        if let scanned = ConversationParser.scanProjectsForFile(named: sessionId + ".jsonl") {
+            return parseFirstUserMessage(from: scanned)
+        }
         return nil
     }
 

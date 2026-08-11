@@ -238,6 +238,23 @@ actor SessionStore {
 
         let newPhase = event.determinePhase()
 
+        // Issue #95: `.ended` is a TERMINAL phase in the state machine
+        // (`canTransition` returns false for every `.ended → *`). When cmux
+        // restarts it kills the Claude process (→ status "ended"), then
+        // `claude --resume` relaunches it under the SAME session id but a NEW
+        // pid. Without this, the resurrected session stays pinned at `.ended`
+        // forever — every later hook fails canTransition, CompletionPanel
+        // suppresses its Stop events, and the phone stops receiving pushes
+        // until the app is restarted. A forward-progress hook (SessionStart /
+        // UserPromptSubmit / tool activity — never a trailing Stop from the
+        // previous life) is treated as an explicit resurrection: drop the
+        // ended marker so the normal transition below applies to a live phase.
+        if session.phase == .ended, Self.eventResurrectsEndedSession(event) {
+            DebugLogger.log("Store", "resume: reactivating ended session sid=\(sessionId.prefix(8)) via \(event.event) newPhase=\(String(describing: newPhase)) pid→\(event.pid?.description ?? "nil")")
+            session.phase = .idle
+            session.endedAt = nil
+        }
+
         if session.phase.canTransition(to: newPhase) {
             session.phase = newPhase
         } else {
@@ -329,6 +346,19 @@ actor SessionStore {
     private static func eventAdvancesTurnNonce(_ event: HookEvent) -> Bool {
         switch event.event {
         case "UserPromptSubmit", "PreToolUse", "PostToolUse":
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// A hook signalling the session is alive and moving forward — used to
+    /// resurrect a session previously marked `.ended` but resumed under the
+    /// same session id (issue #95). Excludes `Stop`: a trailing Stop from the
+    /// process's previous life must not revive an ended session.
+    private static func eventResurrectsEndedSession(_ event: HookEvent) -> Bool {
+        switch event.event {
+        case "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest":
             return true
         default:
             return false

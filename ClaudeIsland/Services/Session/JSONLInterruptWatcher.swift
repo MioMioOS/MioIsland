@@ -41,7 +41,12 @@ class JSONLInterruptWatcher {
         self.sessionId = sessionId
         let projectDir = cwd.replacingOccurrences(of: "/", with: "-")
                             .replacingOccurrences(of: ".", with: "-")
-        self.filePath = NSHomeDirectory() + "/.claude/projects/" + projectDir + "/" + sessionId + ".jsonl"
+        let encodedPath = NSHomeDirectory() + "/.claude/projects/" + projectDir + "/" + sessionId + ".jsonl"
+        // Non-ASCII cwd breaks the encoded path (issue #99); fall back to a
+        // UUID-name scan across all project dirs.
+        self.filePath = FileManager.default.fileExists(atPath: encodedPath)
+            ? encodedPath
+            : (ConversationParser.scanProjectsForFile(named: sessionId + ".jsonl") ?? encodedPath)
     }
 
     /// Start watching the JSONL file for interrupts

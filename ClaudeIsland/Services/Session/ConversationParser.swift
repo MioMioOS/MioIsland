@@ -527,6 +527,34 @@ actor ConversationParser {
         return true
     }
 
+    /// Last-resort lookup by globally-unique file name across every project dir.
+    ///
+    /// Our encoded project-dir path (`/`→`-`, `.`→`-`) diverges from Claude
+    /// Code's, which ALSO replaces every non-ASCII character with `-`. So a cwd
+    /// like `/Users/x/工作/项目` encodes to `-Users-x-工作-项目` on our side but
+    /// `-Users-x-------` on Claude Code's — the JSONL is never found and the
+    /// conversation text renders as "..." (issue #99).
+    ///
+    /// We deliberately do NOT mirror Claude Code's encoding: it is itself lossy
+    /// (two different dirs with the same non-ASCII length collide), and would
+    /// re-break if Claude Code ever changes it. Instead we scan for the file by
+    /// its UUID name — session/agent IDs are globally unique, so the first hit
+    /// is unambiguous. Only runs after the encoded-path lookups miss, so the
+    /// happy path pays nothing.
+    static func scanProjectsForFile(named fileName: String) -> String? {
+        let projectsURL = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/projects")
+        guard let subdirs = try? FileManager.default.contentsOfDirectory(
+            at: projectsURL, includingPropertiesForKeys: nil
+        ) else { return nil }
+        for subdir in subdirs {
+            let candidate = subdir.appendingPathComponent(fileName).path
+            if FileManager.default.fileExists(atPath: candidate) {
+                return candidate
+            }
+        }
+        return nil
+    }
+
     /// Build session file path, walking up parent directories if needed
     private static func sessionFilePath(sessionId: String, cwd: String) -> String {
         let home = NSHomeDirectory()
@@ -541,6 +569,12 @@ actor ConversationParser {
                 return path
             }
             dir = (dir as NSString).deletingLastPathComponent
+        }
+
+        // Last resort: encoded-path lookups all missed. On a non-ASCII cwd this
+        // is expected (issue #99) — find the JSONL by its UUID name instead.
+        if let scanned = scanProjectsForFile(named: sessionId + ".jsonl") {
+            return scanned
         }
 
         // Fallback to original cwd-based path
@@ -975,7 +1009,12 @@ actor ConversationParser {
         guard !agentId.isEmpty else { return [] }
 
         let projectDir = cwd.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ".", with: "-")
-        let agentFile = NSHomeDirectory() + "/.claude/projects/" + projectDir + "/agent-" + agentId + ".jsonl"
+        let encodedPath = NSHomeDirectory() + "/.claude/projects/" + projectDir + "/agent-" + agentId + ".jsonl"
+        // Non-ASCII cwd breaks the encoded path (issue #99); fall back to a
+        // UUID-name scan across all project dirs.
+        let agentFile = FileManager.default.fileExists(atPath: encodedPath)
+            ? encodedPath
+            : (Self.scanProjectsForFile(named: "agent-" + agentId + ".jsonl") ?? encodedPath)
 
         guard FileManager.default.fileExists(atPath: agentFile),
               let content = try? String(contentsOfFile: agentFile, encoding: .utf8) else {
@@ -1067,7 +1106,12 @@ extension ConversationParser {
         guard !agentId.isEmpty else { return [] }
 
         let projectDir = cwd.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ".", with: "-")
-        let agentFile = NSHomeDirectory() + "/.claude/projects/" + projectDir + "/agent-" + agentId + ".jsonl"
+        let encodedPath = NSHomeDirectory() + "/.claude/projects/" + projectDir + "/agent-" + agentId + ".jsonl"
+        // Non-ASCII cwd breaks the encoded path (issue #99); fall back to a
+        // UUID-name scan across all project dirs.
+        let agentFile = FileManager.default.fileExists(atPath: encodedPath)
+            ? encodedPath
+            : (Self.scanProjectsForFile(named: "agent-" + agentId + ".jsonl") ?? encodedPath)
 
         guard FileManager.default.fileExists(atPath: agentFile),
               let content = try? String(contentsOfFile: agentFile, encoding: .utf8) else {
