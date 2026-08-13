@@ -100,27 +100,33 @@ final class TerminalWriter {
         return detectedFallback
     }
 
-    /// Every agent TUI driven through cmux (Claude / Codex / Gemini / opencode …)
-    /// runs in raw mode with bracketed paste. In that mode an inline `\r` in the
-    /// pasted text is NOT a reliable submit:
+    /// Every agent TUI we drive through cmux — Claude Code, Codex, Gemini,
+    /// opencode — runs in raw mode with bracketed paste, so an inline `\r` is
+    /// not a reliable way to submit:
     ///
-    ///  - short payloads: cmux forwards the `\r` as a carriage return, so
-    ///    replacing every `\n` with `\r` splits one multi-line message into N
-    ///    separately-submitted messages (issue #96);
-    ///  - payloads past cmux's ~128-byte inline buffer switch to the
-    ///    `ghostty_surface_text` channel, where the trailing `\r` is just a
-    ///    literal character — the text lands in the composer but never submits,
-    ///    while the phone still shows "delivered" (issue #96, silent failure).
+    /// - Short payloads happen to submit, because cmux writes them as raw
+    ///   keystrokes and `\r` *is* the Enter key.
+    /// - Past a payload-size threshold (measured at ~128 bytes against
+    ///   cmux 0.64.17) cmux switches to a bulk-text path, where the trailing
+    ///   `\r` is inserted as a literal newline and the message is **stranded in
+    ///   the composer, unsent** — while the phone still reports "delivered".
+    /// - Worse, mapping every `\n` to `\r` means each newline is an Enter, so a
+    ///   single multi-line message is **split into several submitted messages**.
     ///
-    /// A real Enter *key* event (`cmux send-key enter`) submits correctly in
-    /// every case and for every length, so send-then-key is the default for the
-    /// entire cmux path — not just Codex. The text is sent verbatim (no
-    /// `\n`→`\r` rewrite) so multi-line messages stay a single message.
+    /// A real Enter *key* event has none of these problems and is correct for
+    /// every payload size and shape, so it is now the only path. This function
+    /// only ever feeds the cmux backend, and `cmux send-key` targets the
+    /// workspace's active surface when `--surface` is omitted — the same
+    /// surface `cmux send` just wrote to — so it is safe with or without an
+    /// explicit surface. `terminalApp` / `hasSurfaceTarget` are kept for
+    /// callers and diagnostics but no longer change the submit path.
     ///
-    /// `terminalApp` / `hasSurfaceTarget` are retained for API/diagnostic
-    /// compatibility but no longer branch the submit strategy.
+    /// Previously only `terminalApp == "codex"` took this path. That check
+    /// could never fire for a Claude Code session running inside cmux, whose
+    /// `terminalApp` is `cmux` — `terminalApp` names the *terminal*, not the
+    /// agent — so Claude kept the broken inline-`\r` path.
     nonisolated static func cmuxSubmissionPlan(text: String, terminalApp: String?, hasSurfaceTarget: Bool) -> CmuxSubmissionPlan {
-        return .sendThenKey(text: text, key: "enter")
+        .sendThenKey(text: text, key: "enter")
     }
 
     // MARK: - Diagnostics (for Settings → cmux Connection tab)

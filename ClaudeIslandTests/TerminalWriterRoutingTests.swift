@@ -48,32 +48,48 @@ final class TerminalWriterRoutingTests: XCTestCase {
         XCTAssertEqual(plan, .sendThenKey(text: "OK", key: "enter"))
     }
 
-    /// Issue #96: the cmux path now uses a real Enter key event for ALL agents,
-    /// not just Codex. A cmux-hosted Claude session reports `terminalApp=cmux`
-    /// (never "claude"), so gating send-then-key on the agent name never fired.
-    /// send-then-key is the default; the old `.appendReturn("OK\r")` assertion
-    /// pinned the bug in place.
-    func test_standardCmuxSubmissionUsesSeparateEnterKey() {
-        let plan = TerminalWriter.cmuxSubmissionPlan(
-            text: "OK",
-            terminalApp: "cmux",
-            hasSurfaceTarget: true
-        )
+    /// Regression (phone→terminal): a Claude Code session running inside cmux
+    /// reports `terminalApp == "cmux"`, so the old `== "codex"` check never
+    /// fired and it fell back to the inline-`\r` path. Every agent TUI cmux
+    /// drives needs a real Enter key event, so this is now the only path.
+    func test_nonCodexCmuxSubmissionAlsoUsesSeparateEnterKey() {
+        for app in ["cmux", "Ghostty", "iTerm2", nil] {
+            let plan = TerminalWriter.cmuxSubmissionPlan(
+                text: "OK",
+                terminalApp: app,
+                hasSurfaceTarget: true
+            )
 
-        XCTAssertEqual(plan, .sendThenKey(text: "OK", key: "enter"))
+            XCTAssertEqual(plan, .sendThenKey(text: "OK", key: "enter"), "terminalApp: \(app ?? "nil")")
+        }
     }
 
-    /// Issue #96: a multi-line message must stay ONE message. The text is sent
-    /// verbatim (no `\n`→`\r` rewrite), and a single Enter key submits it — so
-    /// the newline survives in the composer instead of splitting into N sends.
-    func test_multilineCmuxSubmissionIsSentVerbatimAsSingleMessage() {
+    /// Regression: the old path mapped every `\n` to `\r`, and `\r` is the Enter
+    /// key — so one multi-line message was submitted as several separate
+    /// messages. Newlines must survive as newlines.
+    func test_multilineTextIsNotSplitIntoSeparateSubmissions() {
         let plan = TerminalWriter.cmuxSubmissionPlan(
-            text: "line1\nline2",
+            text: "line one\nline two\nline three",
             terminalApp: "cmux",
             hasSurfaceTarget: true
         )
 
-        XCTAssertEqual(plan, .sendThenKey(text: "line1\nline2", key: "enter"))
+        XCTAssertEqual(plan, .sendThenKey(text: "line one\nline two\nline three", key: "enter"))
+    }
+
+    /// Regression: past a payload-size threshold (~128 bytes on cmux 0.64.17)
+    /// cmux writes text through a bulk path where a trailing `\r` is a literal
+    /// newline, stranding the message in the composer unsent. A key event is
+    /// size-independent.
+    func test_longTextStillUsesSeparateEnterKey() {
+        let long = String(repeating: "z", count: 4096)
+        let plan = TerminalWriter.cmuxSubmissionPlan(
+            text: long,
+            terminalApp: "cmux",
+            hasSurfaceTarget: true
+        )
+
+        XCTAssertEqual(plan, .sendThenKey(text: long, key: "enter"))
     }
 
     /// Regression: Codex's raw-mode TUI only submits on a real Enter KEY event;
