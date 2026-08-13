@@ -100,23 +100,33 @@ final class TerminalWriter {
         return detectedFallback
     }
 
-    /// Codex's TUI runs in raw mode with bracketed paste: a `\r` in the text
-    /// stream is a literal newline in its composer, never a submit. It only
-    /// submits on a real Enter *key* event. That's true whether or not we
-    /// resolved an explicit cmux surface — `cmux send-key` targets the
-    /// workspace's active surface when `--surface` is omitted — so Codex must
-    /// ALWAYS take the send-then-key path. Gating this on `hasSurfaceTarget`
-    /// was the bug: with no surface it fell back to the inline-`\r` path, which
-    /// strands the text in Codex's composer unsent. `hasSurfaceTarget` is kept
-    /// for callers/diagnostics but no longer changes Codex's submit path.
+    /// Every agent TUI we drive through cmux — Claude Code, Codex, Gemini,
+    /// opencode — runs in raw mode with bracketed paste, so an inline `\r` is
+    /// not a reliable way to submit:
+    ///
+    /// - Short payloads happen to submit, because cmux writes them as raw
+    ///   keystrokes and `\r` *is* the Enter key.
+    /// - Past a payload-size threshold (measured at ~128 bytes against
+    ///   cmux 0.64.17) cmux switches to a bulk-text path, where the trailing
+    ///   `\r` is inserted as a literal newline and the message is **stranded in
+    ///   the composer, unsent** — while the phone still reports "delivered".
+    /// - Worse, mapping every `\n` to `\r` means each newline is an Enter, so a
+    ///   single multi-line message is **split into several submitted messages**.
+    ///
+    /// A real Enter *key* event has none of these problems and is correct for
+    /// every payload size and shape, so it is now the only path. This function
+    /// only ever feeds the cmux backend, and `cmux send-key` targets the
+    /// workspace's active surface when `--surface` is omitted — the same
+    /// surface `cmux send` just wrote to — so it is safe with or without an
+    /// explicit surface. `terminalApp` / `hasSurfaceTarget` are kept for
+    /// callers and diagnostics but no longer change the submit path.
+    ///
+    /// Previously only `terminalApp == "codex"` took this path. That check
+    /// could never fire for a Claude Code session running inside cmux, whose
+    /// `terminalApp` is `cmux` — `terminalApp` names the *terminal*, not the
+    /// agent — so Claude kept the broken inline-`\r` path.
     nonisolated static func cmuxSubmissionPlan(text: String, terminalApp: String?, hasSurfaceTarget: Bool) -> CmuxSubmissionPlan {
-        let normalizedApp = terminalApp?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if normalizedApp == "codex" {
-            return .sendThenKey(text: text, key: "enter")
-        }
-
-        let escaped = text.replacingOccurrences(of: "\n", with: "\r")
-        return .appendReturn("\(escaped)\r")
+        .sendThenKey(text: text, key: "enter")
     }
 
     // MARK: - Diagnostics (for Settings → cmux Connection tab)
