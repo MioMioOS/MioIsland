@@ -227,12 +227,22 @@ enum CodexHookInstaller {
     static func enableCodexHooksFeature(in contents: String) -> CodexFeatureMutation {
         var lines = contents.components(separatedBy: "\n")
 
-        if let codexHookIndex = lineIndex(ofKey: "codex_hooks", inSection: "features", lines: lines) {
+        if let codexHookIndex = lineIndex(ofKey: "hooks", inSection: "features", lines: lines) {
             let trimmed = lines[codexHookIndex].trimmingCharacters(in: .whitespaces)
-            if trimmed == "codex_hooks = true" {
+            if trimmed == "hooks = true" {
                 return CodexFeatureMutation(contents: contents, changed: false, featureEnabledByInstaller: false)
             }
-            lines[codexHookIndex] = "codex_hooks = true"
+            lines[codexHookIndex] = "hooks = true"
+            return CodexFeatureMutation(
+                contents: lines.joined(separator: "\n"),
+                changed: true,
+                featureEnabledByInstaller: true
+            )
+        }
+
+        // Also check for the legacy key and replace it
+        if let legacyIndex = lineIndex(ofKey: "codex_hooks", inSection: "features", lines: lines) {
+            lines[legacyIndex] = "hooks = true"
             return CodexFeatureMutation(
                 contents: lines.joined(separator: "\n"),
                 changed: true,
@@ -241,7 +251,7 @@ enum CodexHookInstaller {
         }
 
         if let featuresRange = sectionRange(named: "features", lines: lines) {
-            lines.insert("codex_hooks = true", at: featuresRange.upperBound)
+            lines.insert("hooks = true", at: featuresRange.upperBound)
             return CodexFeatureMutation(
                 contents: lines.joined(separator: "\n"),
                 changed: true,
@@ -253,7 +263,7 @@ enum CodexHookInstaller {
             lines.append("")
         }
         lines.append("[features]")
-        lines.append("codex_hooks = true")
+        lines.append("hooks = true")
 
         return CodexFeatureMutation(
             contents: lines.joined(separator: "\n"),
@@ -264,8 +274,13 @@ enum CodexHookInstaller {
 
     static func disableCodexHooksFeatureIfManaged(in contents: String) -> CodexFeatureMutation {
         var lines = contents.components(separatedBy: "\n")
-        guard let featuresRange = sectionRange(named: "features", lines: lines),
-              let codexHookIndex = lineIndex(ofKey: "codex_hooks", inSection: "features", lines: lines) else {
+        guard let featuresRange = sectionRange(named: "features", lines: lines) else {
+            return CodexFeatureMutation(contents: contents, changed: false, featureEnabledByInstaller: false)
+        }
+
+        // Look for the current key first, then fall back to legacy key
+        guard let codexHookIndex = lineIndex(ofKey: "hooks", inSection: "features", lines: lines)
+              ?? lineIndex(ofKey: "codex_hooks", inSection: "features", lines: lines) else {
             return CodexFeatureMutation(contents: contents, changed: false, featureEnabledByInstaller: false)
         }
 
